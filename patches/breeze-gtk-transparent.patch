@@ -1,0 +1,553 @@
+diff --git a/README.md b/README.md
+index 30dacc3..cc94006 100644
+--- a/README.md
++++ b/README.md
+@@ -17,3 +17,26 @@ To install only for the current user, copy the files to "~/.themes".
+ 
+ To set the theme in Plasma 5, install kde-gtk-config and use System Settings > Application Style > GNOME Application Style.
+ Also make sure to disable "apply colors to non-Qt applications" in System Settings > Colors > Options.
++
++## Window background transparency
++
++Installed as the `Breeze-Transparent` and `Breeze-Transparent-Dark` GTK themes, next to stock Breeze.
++Window, headerbar and dialog backgrounds are translucent. The default opacity is set at build time:
++
++```sh
++cmake -DBREEZE_GTK_WINDOW_OPACITY=85 ..    # percent, 100 = opaque
++# or: build_theme.sh -o 85 ...
++```
++
++It can be changed at runtime by redefining the translucent colors in `~/.config/gtk-3.0/gtk.css`
++and `~/.config/gtk-4.0/gtk.css` (after the `colors.css` import written by KDE):
++
++```css
++@define-color theme_bg_color_translucent_breeze alpha(@theme_bg_color_breeze, 0.7);
++@define-color theme_unfocused_bg_color_translucent_breeze alpha(@theme_unfocused_bg_color_breeze, 0.7);
++@define-color theme_titlebar_background_translucent_breeze alpha(@theme_titlebar_background_breeze, 0.7);
++@define-color theme_titlebar_background_backdrop_translucent_breeze alpha(@theme_titlebar_background_backdrop_breeze, 0.7);
++```
++
++Note: GTK themes cannot request background blur. On X11, GTK 3 windows without client-side
++decorations have no alpha channel and will look darkened instead; Wayland is recommended.
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 743c948..383103c 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -2,6 +2,8 @@ file(GLOB_RECURSE SCSS_SOURCES "*.scss")
+ file(GLOB CSS_SOURCES "*.css")
+ file(GLOB_RECURSE GTK2_SOURCES "gtk2/*")
+ 
++set(BREEZE_GTK_WINDOW_OPACITY 85 CACHE STRING "Window background opacity in percent (0-100)")
++
+ configure_file(build_theme.sh.cmake ${CMAKE_CURRENT_BINARY_DIR}/build_theme.sh @ONLY)
+ 
+ set(SOURCES
+@@ -20,33 +22,34 @@ function(gen_targets THEME_NAME)
+     )
+ endfunction()
+ 
+-gen_targets(Breeze)
+-gen_targets(Breeze-Dark)
++# installed as separate themes, next to stock Breeze and Breeze-Dark
++gen_targets(Breeze-Transparent)
++gen_targets(Breeze-Transparent-Dark)
+ 
+-list(APPEND Breeze_TARGETS
+-    "${PROJECT_BINARY_DIR}/Breeze/gtk-3.0/gtk-dark.css"
+-    "${PROJECT_BINARY_DIR}/Breeze/gtk-4.0/gtk-dark.css"
++list(APPEND Breeze-Transparent_TARGETS
++    "${PROJECT_BINARY_DIR}/Breeze-Transparent/gtk-3.0/gtk-dark.css"
++    "${PROJECT_BINARY_DIR}/Breeze-Transparent/gtk-4.0/gtk-dark.css"
+ )
+ 
+ add_custom_command(
+-    OUTPUT ${Breeze-Dark_TARGETS}
++    OUTPUT ${Breeze-Transparent-Dark_TARGETS}
+     DEPENDS ${SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/build_theme.sh
+-    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/build_theme.sh -c BreezeDark -t "${PROJECT_BINARY_DIR}/Breeze-Dark" -r "${BREEZE_COLOR_INSTALL_ROOT}"
++    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/build_theme.sh -c BreezeDark -t "${PROJECT_BINARY_DIR}/Breeze-Transparent-Dark" -r "${BREEZE_COLOR_INSTALL_ROOT}"
+     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/src"
+ )
+-add_custom_target(Breeze-Dark ALL DEPENDS ${Breeze-Dark_TARGETS})
++add_custom_target(Breeze-Transparent-Dark ALL DEPENDS ${Breeze-Transparent-Dark_TARGETS})
+ 
+ add_custom_command(
+-    OUTPUT ${Breeze_TARGETS}
++    OUTPUT ${Breeze-Transparent_TARGETS}
+     DEPENDS ${SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/build_theme.sh
+-    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/build_theme.sh -c BreezeLight -t "${PROJECT_BINARY_DIR}/Breeze" -r "${BREEZE_COLOR_INSTALL_ROOT}"
+-    COMMAND cp gtk-dark-3.0.css "${PROJECT_BINARY_DIR}/Breeze/gtk-3.0/gtk-dark.css"
+-    COMMAND cp gtk-dark-4.0.css "${PROJECT_BINARY_DIR}/Breeze/gtk-4.0/gtk-dark.css"
++    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/build_theme.sh -c BreezeLight -t "${PROJECT_BINARY_DIR}/Breeze-Transparent" -r "${BREEZE_COLOR_INSTALL_ROOT}"
++    COMMAND cp gtk-dark-3.0.css "${PROJECT_BINARY_DIR}/Breeze-Transparent/gtk-3.0/gtk-dark.css"
++    COMMAND cp gtk-dark-4.0.css "${PROJECT_BINARY_DIR}/Breeze-Transparent/gtk-4.0/gtk-dark.css"
+     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/src"
+ )
+-add_custom_target(Breeze ALL DEPENDS ${Breeze_TARGETS})
++add_custom_target(Breeze-Transparent ALL DEPENDS ${Breeze-Transparent_TARGETS})
+ 
+-install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
+-install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze-Dark" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
+-install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze")
+-install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze-Dark")
++install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze-Transparent" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
++install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze-Transparent-Dark" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
++install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze-Transparent")
++install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze-Transparent-Dark")
+diff --git a/src/_colors.scss b/src/_colors.scss
+index dc03035..c9bc43a 100644
+--- a/src/_colors.scss
++++ b/src/_colors.scss
+@@ -1,5 +1,8 @@
+ @charset "UTF-8";
+ 
++// window background opacity (0-1), set at build time by build_theme.sh
++$window_opacity: 1 !default;
++
+ //apps rely on some named colors to be exported
+ /* GTK NAMED COLORS
+    ----------------
+@@ -200,6 +203,20 @@ these are pretty self explicative */
+ 
+ @define-color theme_titlebar_foreground_insensitive_backdrop_breeze #{"" + internal_insensitive(internal_t_color(backdrop-text))};
+ 
++/*
++*
++* Window background transparency
++*
++* derived from the colors above, so they follow the colors exported by KDE.
++* The opacity can be changed at runtime by redefining these colors in
++* ~/.config/gtk-3.0/gtk.css and ~/.config/gtk-4.0/gtk.css, e.g.
++* @define-color theme_bg_color_translucent_breeze alpha(@theme_bg_color_breeze, 0.7);
++*/
++@define-color theme_bg_color_translucent_breeze alpha(@theme_bg_color_breeze, #{$window_opacity});
++@define-color theme_unfocused_bg_color_translucent_breeze alpha(@theme_unfocused_bg_color_breeze, #{$window_opacity});
++@define-color theme_titlebar_background_translucent_breeze alpha(@theme_titlebar_background_breeze, #{$window_opacity});
++@define-color theme_titlebar_background_backdrop_translucent_breeze alpha(@theme_titlebar_background_backdrop_breeze, #{$window_opacity});
++
+ /*
+ * Tooltips
+ */
+diff --git a/src/build_theme.sh.cmake b/src/build_theme.sh.cmake
+index 8cc269e..4f4c98f 100755
+--- a/src/build_theme.sh.cmake
++++ b/src/build_theme.sh.cmake
+@@ -44,6 +44,7 @@ render_theme () {
+   cp -R gtk2/* "${THEME_BUILD_DIR}/gtk-2.0/"
+   @Python3_EXECUTABLE@ render_assets.py -c "$1" -a "${THEME_BUILD_DIR}/assets" \
+     -g "${THEME_BUILD_DIR}/gtk-2.0" -G "${THEME_BUILD_DIR}" -b "$4"
++  printf '$window_opacity: %s;\n' "$(awk "BEGIN { print ${WINDOW_OPACITY} / 100 }")" >> "${THEME_BUILD_DIR}/_global.scss"
+   build_sass gtk3/gtk.scss "${THEME_BUILD_DIR}/gtk-3.0/gtk.css" "${THEME_BUILD_DIR}"
+   build_sass gtk4/gtk.scss "${THEME_BUILD_DIR}/gtk-4.0/gtk.css" "${THEME_BUILD_DIR}"
+   rm -f "${THEME_BUILD_DIR}/_global.scss"
+@@ -54,6 +55,7 @@ COLOR_SCHEME=""
+ INSTALL_TARGET=""
+ THEME_NAME=""
+ COLOR_SCHEME_ROOT="/usr/share/color-schemes"
++WINDOW_OPACITY="@BREEZE_GTK_WINDOW_OPACITY@"
+ 
+ while [ "$#" -gt 0 ]; do
+   case "$1" in
+@@ -70,6 +72,8 @@ while [ "$#" -gt 0 ]; do
+       echo "  -t TARGET_DIRECTORY  the directory to install the color scheme. If unset or"
+       echo "                       empty, it is installed into"
+       echo "                       ~/.local/share/themes/THEME_NAME"
++      echo "  -o OPACITY           window background opacity in percent (0-100)."
++      echo "                       Defaults to ${WINDOW_OPACITY}"
+       exit 0
+     ;;
+     -c)
+@@ -84,12 +88,27 @@ while [ "$#" -gt 0 ]; do
+       shift
+       COLOR_SCHEME_ROOT="$1"
+     ;;
++    -o)
++      shift
++      WINDOW_OPACITY="$1"
++    ;;
+   esac
+   shift
+ done
+ 
++case "${WINDOW_OPACITY}" in
++  ''|*[!0-9]*)
++    echo "invalid window opacity '${WINDOW_OPACITY}', expected an integer between 0 and 100"
++    exit 1
++  ;;
++esac
++if [ "${WINDOW_OPACITY}" -gt 100 ]; then
++  echo "invalid window opacity '${WINDOW_OPACITY}', expected an integer between 0 and 100"
++  exit 1
++fi
++
+ if [ -z "${COLOR_SCHEME}" ]; then
+-  THEME_NAME="Breeze"
++  THEME_NAME="Breeze-Transparent"
+   if [ -f "${HOME}/.config/kdeglobals" ]; then
+     COLOR_SCHEME="${HOME}/.config/kdeglobals"
+   else
+diff --git a/src/gtk-dark-3.0.css b/src/gtk-dark-3.0.css
+index 500996b..0451784 100644
+--- a/src/gtk-dark-3.0.css
++++ b/src/gtk-dark-3.0.css
+@@ -1 +1 @@
+-@import url("../../Breeze-Dark/gtk-3.0/gtk.css");
++@import url("../../Breeze-Transparent-Dark/gtk-3.0/gtk.css");
+diff --git a/src/gtk-dark-4.0.css b/src/gtk-dark-4.0.css
+index 8f75c04..c7db94e 100644
+--- a/src/gtk-dark-4.0.css
++++ b/src/gtk-dark-4.0.css
+@@ -1 +1 @@
+-@import url("../../Breeze-Dark/gtk-4.0/gtk.css");
++@import url("../../Breeze-Transparent-Dark/gtk-4.0/gtk.css");
+diff --git a/src/gtk3/widgets/_base.scss b/src/gtk3/widgets/_base.scss
+index ba388ce..e098908 100644
+--- a/src/gtk3/widgets/_base.scss
++++ b/src/gtk3/widgets/_base.scss
+@@ -36,13 +36,13 @@ $ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+ 
+ .background {
+ 	color: gtk("@theme_fg_color");
+-	background-color: gtk("@theme_bg_color");
++	background-color: gtk("@theme_bg_color_translucent");
+ 
+ 	&:backdrop {
+ 		text-shadow: none;
+ 		-gtk-icon-shadow: none;
+ 		color: gtk("@theme_unfocused_fg_color");
+-		background-color: gtk("@theme_unfocused_bg_color");
++		background-color: gtk("@theme_unfocused_bg_color_translucent");
+ 	}
+ }
+ 
+diff --git a/src/gtk3/widgets/_dialogs.scss b/src/gtk3/widgets/_dialogs.scss
+index 4eb1082..1c389de 100644
+--- a/src/gtk3/widgets/_dialogs.scss
++++ b/src/gtk3/widgets/_dialogs.scss
+@@ -12,10 +12,10 @@ messagedialog {
+ 	// Message Dialog styling
+ 
+ 	&.background {
+-		background-color: gtk("@theme_bg_color");
++		background-color: gtk("@theme_bg_color_translucent");
+ 	}
+ 	&:backdrop {
+-		background-color: gtk("@theme_unfocused_bg_color");
++		background-color: gtk("@theme_unfocused_bg_color_translucent");
+ 	}
+ 	.titlebar {
+ 		min-height: 32px;
+@@ -37,12 +37,12 @@ messagedialog {
+ 
+ filechooser {
+ 	.search-bar {
+-		background-color: gtk("@theme_bg_color");
+-		border-color: gtk("@theme_bg_color");
++		background-color: transparent;
++		border-color: transparent;
+ 		box-shadow: none;
+ 		&:backdrop {
+-			background-color: gtk("@theme_unfocused_bg_color");
+-			border-color: gtk("@theme_unfocused_bg_color");
++			background-color: transparent;
++			border-color: transparent;
+ 			color: gtk("@theme_unfocused_text_color");
+ 		}
+ 	}
+@@ -53,7 +53,7 @@ filechooser {
+ 		}
+ 	}
+ 	#pathbarbox {
+-		background-color: gtk("@theme_bg_color");
++		background-color: transparent;
+ 		border-bottom: 1px solid gtk("@borders");
+ 	}
+ }
+diff --git a/src/gtk3/widgets/_headerbar.scss b/src/gtk3/widgets/_headerbar.scss
+index a8899a9..905985a 100644
+--- a/src/gtk3/widgets/_headerbar.scss
++++ b/src/gtk3/widgets/_headerbar.scss
+@@ -13,16 +13,16 @@ headerbar {
+ 	border-color: gtk("@borders");
+ 	color: gtk("@theme_titlebar_foreground");
+ 	background-image: none;
+-	background-color: gtk("@theme_titlebar_background");
+-	border-top: 1px solid lighter(gtk("@theme_titlebar_background"));
++	background-color: gtk("@theme_titlebar_background_translucent");
++	border-top: 1px solid lighter(gtk("@theme_titlebar_background_translucent"));
+ 
+ 	&:backdrop {
+ 		background-image: none;
+ 		background-color: gtk(
+-			"@theme_titlebar_background_backdrop"
++			"@theme_titlebar_background_backdrop_translucent"
+ 		);
+ 		color: gtk("@theme_titlebar_foreground_backdrop");
+-		border-top: 1px solid lighter(gtk("@theme_titlebar_background_backdrop"));
++		border-top: 1px solid lighter(gtk("@theme_titlebar_background_backdrop_translucent"));
+ 		box-shadow: none;
+ 	}
+ 	label {
+@@ -54,9 +54,7 @@ headerbar {
+ 
+ 		&:backdrop {
+ 			background-image: none;
+-			background-color: gtk(
+-				"@theme_titlebar_background_backdrop"
+-			);
++			background-color: transparent;
+ 			color: gtk("@theme_titlebar_foreground_backdrop");
+ 		}
+ 
+@@ -64,9 +62,7 @@ headerbar {
+ 		&.flat:backdrop:disabled,
+ 		&:disabled:backdrop {
+ 			background-image: none;
+-			background-color: gtk(
+-				"@theme_titlebar_background_backdrop"
+-			);
++			background-color: transparent;
+ 			color: gtk("@theme_titlebar_foreground_backdrop");
+ 			border-color: transparent;
+ 		}
+diff --git a/src/gtk3/widgets/_notebook.scss b/src/gtk3/widgets/_notebook.scss
+index 52ebd5a..fba2725 100644
+--- a/src/gtk3/widgets/_notebook.scss
++++ b/src/gtk3/widgets/_notebook.scss
+@@ -17,7 +17,7 @@ notebook {
+ 	> header {
+ 		padding: 0px;
+ 		border: none;
+-		background-color: gtk("@theme_bg_color");
++		background-color: transparent;
+ 		//box-shadow: inset 0 -1px gtk("@borders");
+ 
+ 		&.top {
+@@ -45,7 +45,7 @@ notebook {
+ 			}
+ 		}
+ 		&:backdrop {
+-			background-color: gtk("@theme_unfocused_bg_color");
++			background-color: transparent;
+ 		}
+ 
+ 		tabs {
+diff --git a/src/gtk3/widgets/_pathbar.scss b/src/gtk3/widgets/_pathbar.scss
+index a18e515..660af3c 100644
+--- a/src/gtk3/widgets/_pathbar.scss
++++ b/src/gtk3/widgets/_pathbar.scss
+@@ -4,7 +4,7 @@
+  * Pathbars *
+  ************/
+ .path-bar {
+-	background-color: gtk("@theme_bg_color");
++	background-color: transparent;
+ 	border-bottom: 1px solid gtk("@borders");
+ }
+ 
+diff --git a/src/gtk3/widgets/_toolbar.scss b/src/gtk3/widgets/_toolbar.scss
+index 0ffaf00..ea8be8a 100644
+--- a/src/gtk3/widgets/_toolbar.scss
++++ b/src/gtk3/widgets/_toolbar.scss
+@@ -3,16 +3,17 @@
+ /************
+  * Toolbars *
+  ************/
++// bars are drawn on top of the (possibly translucent) window background, which already has their color
+ %toolbar {
+ 	-GtkWidget-window-dragging: true;
+ 	padding: 4px;
+-	background-color: gtk("@theme_bg_color");
++	background-color: transparent;
+ }
+ .toolbar, toolbar {
+ 	@extend %toolbar;
+ 	padding: 4px 3px 3px 4px;
+ 	&:backdrop {
+-		background-color: gtk("@theme_unfocused_bg_color");
++		background-color: transparent;
+ 		box-shadow: none;
+ 	}
+ 	button {
+@@ -73,5 +74,5 @@ searchbar > revealer > box,
+ 	border-style: solid;
+ 	border-color: gtk("@borders");
+ 	text-shadow: none;
+-	background-color: gtk("@theme_bg_color");
++	background-color: transparent;
+ }
+diff --git a/src/gtk4/widgets/_base.scss b/src/gtk4/widgets/_base.scss
+index 5678c39..89dacab 100644
+--- a/src/gtk4/widgets/_base.scss
++++ b/src/gtk4/widgets/_base.scss
+@@ -14,13 +14,13 @@ $ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+ 
+ .background {
+ 	color: gtk("@theme_fg_color");
+-	background-color: gtk("@theme_bg_color");
++	background-color: gtk("@theme_bg_color_translucent");
+ 
+ 	&:backdrop {
+ 		text-shadow: none;
+ 		-gtk-icon-shadow: none;
+ 		color: gtk("@theme_unfocused_fg_color");
+-		background-color: gtk("@theme_unfocused_bg_color");
++		background-color: gtk("@theme_unfocused_bg_color_translucent");
+ 	}
+ }
+ 
+diff --git a/src/gtk4/widgets/_dialogs.scss b/src/gtk4/widgets/_dialogs.scss
+index c6a0816..4585a39 100644
+--- a/src/gtk4/widgets/_dialogs.scss
++++ b/src/gtk4/widgets/_dialogs.scss
+@@ -12,10 +12,10 @@ messagedialog {
+ 	// Message Dialog styling
+ 
+ 	&.background {
+-		background-color: gtk("@theme_bg_color");
++		background-color: gtk("@theme_bg_color_translucent");
+ 	}
+ 	&:backdrop {
+-		background-color: gtk("@theme_unfocused_bg_color");
++		background-color: gtk("@theme_unfocused_bg_color_translucent");
+ 	}
+ 	.titlebar {
+ 		min-height: 32px;
+@@ -37,12 +37,12 @@ messagedialog {
+ 
+ filechooser {
+ 	.search-bar {
+-		background-color: gtk("@theme_bg_color");
+-		border-color: gtk("@theme_bg_color");
++		background-color: transparent;
++		border-color: transparent;
+ 		box-shadow: none;
+ 		&:backdrop {
+-			background-color: gtk("@theme_unfocused_bg_color");
+-			border-color: gtk("@theme_unfocused_bg_color");
++			background-color: transparent;
++			border-color: transparent;
+ 			color: gtk("@theme_unfocused_text_color");
+ 		}
+ 	}
+@@ -53,7 +53,7 @@ filechooser {
+ 		}
+ 	}
+ 	#pathbarbox {
+-		background-color: gtk("@theme_bg_color");
++		background-color: transparent;
+ 		border-bottom: 1px solid gtk("@borders");
+ 	}
+ }
+diff --git a/src/gtk4/widgets/_headerbar.scss b/src/gtk4/widgets/_headerbar.scss
+index 0941d35..e14f0ea 100644
+--- a/src/gtk4/widgets/_headerbar.scss
++++ b/src/gtk4/widgets/_headerbar.scss
+@@ -13,16 +13,16 @@ headerbar {
+ 	border-color: gtk("@borders");
+ 	color: gtk("@theme_titlebar_foreground");
+ 	background-image: none;
+-	background-color: gtk("@theme_titlebar_background");
+-	border-top: 1px solid lighter(gtk("@theme_titlebar_background"));
++	background-color: gtk("@theme_titlebar_background_translucent");
++	border-top: 1px solid lighter(gtk("@theme_titlebar_background_translucent"));
+ 
+ 	&:backdrop {
+ 		background-image: none;
+ 		background-color: gtk(
+-			"@theme_titlebar_background_backdrop"
++			"@theme_titlebar_background_backdrop_translucent"
+ 		);
+ 		color: gtk("@theme_titlebar_foreground_backdrop");
+-		border-top: 1px solid lighter(gtk("@theme_titlebar_background_backdrop"));
++		border-top: 1px solid lighter(gtk("@theme_titlebar_background_backdrop_translucent"));
+ 		box-shadow: none;
+ 	}
+ 	label {
+@@ -54,9 +54,7 @@ headerbar {
+ 
+ 		&:backdrop {
+ 			background-image: none;
+-			background-color: gtk(
+-				"@theme_titlebar_background_backdrop"
+-			);
++			background-color: transparent;
+ 			color: gtk("@theme_titlebar_foreground_backdrop");
+ 		}
+ 
+@@ -64,9 +62,7 @@ headerbar {
+ 		&.flat:backdrop:disabled,
+ 		&:disabled:backdrop {
+ 			background-image: none;
+-			background-color: gtk(
+-				"@theme_titlebar_background_backdrop"
+-			);
++			background-color: transparent;
+ 			color: gtk("@theme_titlebar_foreground_backdrop");
+ 			border-color: transparent;
+ 		}
+diff --git a/src/gtk4/widgets/_notebook.scss b/src/gtk4/widgets/_notebook.scss
+index 52ebd5a..fba2725 100644
+--- a/src/gtk4/widgets/_notebook.scss
++++ b/src/gtk4/widgets/_notebook.scss
+@@ -17,7 +17,7 @@ notebook {
+ 	> header {
+ 		padding: 0px;
+ 		border: none;
+-		background-color: gtk("@theme_bg_color");
++		background-color: transparent;
+ 		//box-shadow: inset 0 -1px gtk("@borders");
+ 
+ 		&.top {
+@@ -45,7 +45,7 @@ notebook {
+ 			}
+ 		}
+ 		&:backdrop {
+-			background-color: gtk("@theme_unfocused_bg_color");
++			background-color: transparent;
+ 		}
+ 
+ 		tabs {
+diff --git a/src/gtk4/widgets/_pathbar.scss b/src/gtk4/widgets/_pathbar.scss
+index a18e515..660af3c 100644
+--- a/src/gtk4/widgets/_pathbar.scss
++++ b/src/gtk4/widgets/_pathbar.scss
+@@ -4,7 +4,7 @@
+  * Pathbars *
+  ************/
+ .path-bar {
+-	background-color: gtk("@theme_bg_color");
++	background-color: transparent;
+ 	border-bottom: 1px solid gtk("@borders");
+ }
+ 
+diff --git a/src/gtk4/widgets/_toolbar.scss b/src/gtk4/widgets/_toolbar.scss
+index a9e46de..dc951be 100644
+--- a/src/gtk4/widgets/_toolbar.scss
++++ b/src/gtk4/widgets/_toolbar.scss
+@@ -3,15 +3,16 @@
+ /************
+  * Toolbars *
+  ************/
++// bars are drawn on top of the (possibly translucent) window background, which already has their color
+ %toolbar {
+ 	padding: 4px;
+-	background-color: gtk("@theme_bg_color");
++	background-color: transparent;
+ }
+ .toolbar, toolbar {
+ 	@extend %toolbar;
+ 	padding: 4px 3px 3px 4px;
+ 	&:backdrop {
+-		background-color: gtk("@theme_unfocused_bg_color");
++		background-color: transparent;
+ 		box-shadow: none;
+ 	}
+ 	button {
+@@ -72,5 +73,5 @@ searchbar > revealer > box,
+ 	border-style: solid;
+ 	border-color: gtk("@borders");
+ 	text-shadow: none;
+-	background-color: gtk("@theme_bg_color");
++	background-color: transparent;
+ }

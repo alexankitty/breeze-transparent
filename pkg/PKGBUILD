@@ -1,0 +1,109 @@
+# Maintainer: junkyardjackass <junkyardjackass@gmail.com>
+# Based on the Arch Linux breeze and breeze-gtk packages
+
+pkgbase=breeze-transparent
+pkgname=(breeze-transparent
+         breeze-transparent-gtk)
+pkgver=6.7.5
+_dirver=$(echo $pkgver | cut -d. -f1-3)
+pkgrel=2
+arch=(x86_64)
+pkgdesc='Breeze widget style and window decoration with translucent window backgrounds'
+url='https://kde.org/plasma-desktop/'
+license=(LGPL-2.0-or-later)
+makedepends=(breeze
+             python
+             extra-cmake-modules
+             frameworkintegration
+             kcmutils
+             kcolorscheme
+             kconfig
+             kcoreaddons
+             kdecoration
+             kguiaddons
+             ki18n
+             kiconthemes
+             kwidgetsaddons
+             kwindowsystem
+             python-cairo
+             qt6-base
+             qt6-declarative
+             sassc)
+source=(https://download.kde.org/stable/plasma/$_dirver/breeze-$pkgver.tar.xz{,.sig}
+        https://download.kde.org/stable/plasma/$_dirver/breeze-gtk-$pkgver.tar.xz{,.sig}
+        breeze-transparent.patch
+        breeze-gtk-transparent.patch)
+sha256sums=('aa05c0c31c852ed5b137327e7798fd763a54c643875d5d8070625475e0af6976'
+            'SKIP'
+            '4e0e913b0515de75492155d028c086c4a522a3f68ebb6f4fab10f8bc646cd518'
+            'SKIP'
+            '1650f8f99c8a84b3d5563a98cdf71873540a135cb043b25056424e16113172bd'
+            'd61299a70019e8d275bc77c4e8607d6bb37055fd4b7084275675b32cf4e94aff')
+# extracted in prepare(), so that rebuilds always start from pristine sources
+noextract=(breeze-$pkgver.tar.xz
+           breeze-gtk-$pkgver.tar.xz)
+validpgpkeys=('E0A3EB202F8E57528E13E72FD7574483BB57B18D'  # Jonathan Esk-Riddell <jr@jriddell.org>
+              '0AAC775BB6437A8D9AF7A3ACFE0784117FBCE11D'  # Bhushan Shah <bshah@kde.org>
+              'D07BD8662C56CB291B316EB2F5675605C74E02CF'  # David Edmundson <davidedmundson@kde.org>
+              '1FA881591C26B276D7A5518EEAAF29B42A678C20') # Marco Martin <notmart@gmail.com>
+
+# Window background opacity (percent) of the GTK themes. Can also be changed at runtime, see the README
+: ${_gtk_window_opacity:=85}
+
+prepare() {
+  rm -rf breeze-$pkgver breeze-gtk-$pkgver
+  bsdtar -xf breeze-$pkgver.tar.xz
+  bsdtar -xf breeze-gtk-$pkgver.tar.xz
+
+  patch -d breeze-$pkgver -Np1 -i "$srcdir"/breeze-transparent.patch
+  patch -d breeze-gtk-$pkgver -Np1 -i "$srcdir"/breeze-gtk-transparent.patch
+}
+
+build() {
+  # Only the widget style and window decoration are built, under their own names,
+  # everything else (colors, cursors, wallpapers, translations...) comes from stock breeze
+  cmake -B build -S breeze-$pkgver \
+    -DBUILD_TESTING=OFF \
+    -DBUILD_QT5=OFF \
+    -DBUILD_CURSOR=OFF \
+    -DWITH_WALLPAPERS=OFF
+  cmake --build build
+
+  # Use the system interpreter (which python-cairo is installed for), not whatever
+  # comes first in PATH (pyenv, conda, venvs...)
+  cmake -B build-gtk -S breeze-gtk-$pkgver \
+    -DPython3_EXECUTABLE=/usr/bin/python3 \
+    -DBREEZE_GTK_WINDOW_OPACITY=$_gtk_window_opacity
+  cmake --build build-gtk
+}
+
+package_breeze-transparent() {
+  depends=(frameworkintegration
+           glibc
+           kcmutils
+           kcolorscheme
+           kconfig
+           kcoreaddons
+           kdecoration
+           kguiaddons
+           ki18n
+           kiconthemes
+           kwidgetsaddons
+           kwindowsystem
+           libstdc++
+           qt6-base
+           qt6-declarative)
+  optdepends=('breeze: translations of the configuration dialogs'
+              'breeze-transparent-gtk: matching GTK theme')
+
+  DESTDIR="$pkgdir" cmake --install build
+}
+
+package_breeze-transparent-gtk() {
+  pkgdesc='Breeze widget theme for GTK 2, 3 and 4 with translucent window backgrounds'
+  arch=(any)
+  depends=()
+  optdepends=('breeze-transparent: matching Qt widget style and window decoration')
+
+  DESTDIR="$pkgdir" cmake --install build-gtk
+}

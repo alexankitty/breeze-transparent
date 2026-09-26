@@ -1,0 +1,6 @@
+[submodule "breeze"]
+	path = breeze
+	url = https://invent.kde.org/plasma/breeze.git
+[submodule "breeze-gtk"]
+	path = breeze-gtk
+	url = https://invent.kde.org/plasma/breeze-gtk.git

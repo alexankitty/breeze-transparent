@@ -1,0 +1,2230 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 67c6095..c23481d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -36,9 +36,9 @@ include(KDEGitCommitHooks)
+ include(GtkUpdateIconCache)
+ 
+ 
+-option(BUILD_QT5 "Build Qt5 style" ON)
++option(BUILD_QT5 "Build Qt5 style" OFF)
+ option(BUILD_QT6 "Build with Qt6" ON)
+-option(BUILD_CURSOR "Build Breeze Cursor" ON)
++option(BUILD_CURSOR "Build Breeze Cursor" OFF)
+ option(BUILD_WITH_QTQUICK "Build with Qt Quick features enabled" ON)
+ 
+ set(QT_NO_CREATE_VERSIONLESS_TARGETS ON)
+@@ -103,6 +103,11 @@ if(BUILD_QT5)
+     build_Qt5()
+ endif()
+ 
++# Breeze Transparent is installed alongside stock Breeze: rename the C++ namespace
++# so that both plugins can be loaded in the same process without clashing
++# (Qt meta object names, meta types, ...)
++add_compile_definitions(Breeze=BreezeTransparent)
++
+ function(build_Qt6)
+     set(QT_MAJOR_VERSION 6)
+     include(KDEInstallDirs6)
+@@ -113,7 +118,7 @@ function(build_Qt6)
+         set(HAVE_QTDBUS ${Qt6DBus_FOUND})
+ 
+         option(WITH_DECORATIONS "Build Breeze window decorations for KWin" ON)
+-        option(WITH_WALLPAPERS "Install Breeze default wallpapers" ON)
++        option(WITH_WALLPAPERS "Install Breeze default wallpapers" OFF)
+ 
+         find_package(KF6FrameworkIntegration ${KF6_MIN_VERSION} CONFIG )
+         set_package_properties(KF${QT_MAJOR_VERSION}FrameworkIntegration PROPERTIES
+@@ -153,7 +158,6 @@ function(build_Qt6)
+ 
+     add_subdirectory(kstyle kstyle6)
+     add_subdirectory(libbreezecommon libbreezecommon6)
+-    add_subdirectory(misc)
+ 
+     if(WITH_DECORATIONS)
+         find_package(KDecoration3 REQUIRED)
+@@ -163,25 +167,8 @@ function(build_Qt6)
+         add_subdirectory(wallpapers)
+     endif()
+ 
+-    ki18n_install(po)
+-
+-    # create a Config.cmake and a ConfigVersion.cmake file and install them
+-    include(ECMSetupVersion)
+-    ecm_setup_version(${PROJECT_VERSION} VARIABLE_PREFIX BREEZE
+-        PACKAGE_VERSION_FILE "${CMAKE_CURRENT_BINARY_DIR}/BreezeConfigVersion.cmake"
+-    )
+-    set(CMAKECONFIG_INSTALL_DIR "${KDE_INSTALL_CMAKEPACKAGEDIR}/Breeze")
+-
+-    configure_package_config_file("${CMAKE_CURRENT_SOURCE_DIR}/BreezeConfig.cmake.in"
+-                                  "${CMAKE_CURRENT_BINARY_DIR}/BreezeConfig.cmake"
+-                                  PATH_VARS KDE_INSTALL_FULL_DATADIR
+-                                  INSTALL_DESTINATION  ${CMAKECONFIG_INSTALL_DIR}
+-    )
+-    install(FILES  "${CMAKE_CURRENT_BINARY_DIR}/BreezeConfig.cmake"
+-                   "${CMAKE_CURRENT_BINARY_DIR}/BreezeConfigVersion.cmake"
+-            DESTINATION "${CMAKECONFIG_INSTALL_DIR}"
+-            COMPONENT Devel
+-    )
++    # translations (same translation domains), the CMake package, colors, cursors and wallpapers
++    # are provided by stock Breeze and not installed here, to avoid file conflicts
+ 
+     unset(QUERY_EXECUTABLE CACHE)
+ endfunction()
+@@ -201,7 +188,7 @@ function(build_colors_and_cursors)
+     endif()
+ endfunction()
+ 
+-build_colors_and_cursors()
++# build_colors_and_cursors()
+ 
+ # add clang-format target for all our real source files
+ file(GLOB_RECURSE ALL_CLANG_FORMAT_SOURCE_FILES *.cpp *.h)
+diff --git a/README.md b/README.md
+index 8256c3b..2c58bed 100644
+--- a/README.md
++++ b/README.md
+@@ -41,3 +41,31 @@ tab to report bugs.
+ you can help translate!
+ 
+ If you get stuck or need help with anything at all, head over to the [KDE New Contributors room](https://go.kde.org/matrix/#/#kde-welcome:kde.org) on Matrix. For questions about Breeze, please ask in the [KDE Development room](https://go.kde.org/matrix/#/#kde-devel:kde.org). See [Matrix](https://community.kde.org/Matrix) for more details.
++
++## Window background transparency
++
++This fork installs next to stock Breeze as the **Breeze Transparent** application style and window decoration.
++It only ships the widget style and window decoration (translations are shared with stock Breeze), and
++uses its own configuration file, `~/.config/breezetransparentrc`.
++
++Application windows and dialogs can have a translucent background, optionally blurred by KWin.
++The Breeze Transparent window decoration uses the same opacity for the titlebar and borders.
++Configure it in System Settings → Colors & Themes → Application Style → Breeze Transparent → Transparency, or in `~/.config/breezetransparentrc`:
++
++```ini
++[Common]
++WindowOpacity=85        # 0-100, 100 disables window transparency
++WindowBlurEnabled=true
++
++[Style]
++TranslucentViews=true   # also lists, file views and text editors
++WindowOpacityBlackList=krita,kdenlive   # applications that always stay opaque
++```
++
++Views (lists, trees, text edits) use the same opacity, and so do widgets painting their background
++themselves: the Kate / KWrite text editor and Dolphin's file view. Their background color is turned
++translucent after they painted, the rest (text, icons) is kept.
++
++Enabling transparency (going from 100 to a lower value) requires restarting applications.
++Applications can opt out a single window by setting the `_breeze_no_window_translucency`
++property to `true` on it before it is shown.
+diff --git a/kdecoration/CMakeLists.txt b/kdecoration/CMakeLists.txt
+index 876430a..1cb5b5d 100644
+--- a/kdecoration/CMakeLists.txt
++++ b/kdecoration/CMakeLists.txt
+@@ -20,7 +20,7 @@ add_library(breezedecoration MODULE
+     ${breezedecoration_config_PART_FORMS_HEADERS})
+ 
+ set_target_properties(breezedecoration PROPERTIES
+-    OUTPUT_NAME org.kde.breeze
++    OUTPUT_NAME org.kde.breezetransparent
+ )
+ 
+ target_link_libraries(breezedecoration
+diff --git a/kdecoration/breeze.json b/kdecoration/breeze.json
+index 9af0b97..1f6b884 100644
+--- a/kdecoration/breeze.json
++++ b/kdecoration/breeze.json
+@@ -1,118 +1,12 @@
+ {
+     "KPlugin": {
+-        "Description": "Window decoration using the Breeze visual style for the Plasma Desktop",
+-        "Description[ar]": "زخرفة نوافذ تستخدم نمط «نسيم» المرئيّ لسطح مكتب «بلازما»",
+-        "Description[az]": "Plasma iş masası üçün Breeze üslubunda pəncərə tərtibatı",
+-        "Description[bg]": "Декорация на прозорци, използваща Breeze визуален стил за работнаta среда на Plasma",
+-        "Description[ca@valencia]": "Decoració de les finestres que utilitza l'estil visual Brisa per a l'escriptori Plasma",
+-        "Description[ca]": "Decoració de les finestres que usa l'estil visual Brisa per a l'escriptori Plasma",
+-        "Description[cs]": "Dekorace oken pro pracovní plochu Plasma využívající styl Breeze",
+-        "Description[da]": "Vinduesdekoration som bruger den visuelle stil Breeze til Plasma-skrivebordet",
+-        "Description[de]": "Fensterdekoration im Breeze-Design für die Plasma-Arbeitsfläche",
+-        "Description[el]": "Διακοσμήσεις παραθύρων με το στιλ του Breeze για την επιφάνεια εργασίας Plasma",
+-        "Description[en_GB]": "Window decoration using the Breeze visual style for the Plasma Desktop",
+-        "Description[eo]": "Fenestraĵa ornamo",
+-        "Description[es]": "Decoración de ventanas que usa el estilo visual Brisa para el escritorio Plasma",
+-        "Description[et]": "Plasma töölaua akende dekoratsioon Breeze'i visuaalse stiiliga",
+-        "Description[eu]": "Plasma mahaigainerako Brisa ikus-estiloa erabiltzen duen leiho-apaindura",
+-        "Description[fi]": "Breeze-tyyliä käyttävä ikkunan kehys Plasma-työpöydälle",
+-        "Description[fr]": "Décorations de fenêtres utilisant le style visuel Breeze pour le bureau Plasma",
+-        "Description[gl]": "Decoración de xanelas que usa o estilo visual Brisa para o escritorio Plasma.",
+-        "Description[he]": "עיטור חלונות בסגנון החזותי של בריזה לשולחן העבודה פלזמה",
+-        "Description[hi]": "प्लाज़्मा डेस्कटॉप के लिए ब्रीज़ दृश्य शैली का उपयोग करके विंडो सजावट",
+-        "Description[hu]": "A Breeze vizuális stílusát használó ablakdekoráció",
+-        "Description[ia]": "Decoration de fenestra usante le stilo visual Breeze (Brisa) per le scriptorio de Plasma",
+-        "Description[id]": "Dekorasi jendela menggunakan gaya visual Breeze untuk Desktop Plasma",
+-        "Description[is]": "Gluggaskreyting sem byggir á Breeze útlitsstíl fyrir Plasma skjáborðið",
+-        "Description[it]": "Decorazione per finestre che usa lo stile visuale di Brezza per il desktop Plasma",
+-        "Description[ja]": "Breeze デザインの Plasma デスクトップ用ウィンドウ装飾",
+-        "Description[ka]": "ფანჯრების დეკორაცია Breeze-ის ვიზუალის სტილში, Plasma Desktop-სთვის",
+-        "Description[ko]": "Plasma 데스크톱의 Breeze 시각 스타일을 사용하는 창 장식",
+-        "Description[lt]": "Langų dekoracijos, naudojant Breeze vaizdinį stilių, skirtą Plasma darbalaukiui",
+-        "Description[lv]": "Loga noformējums ar „Breeze“ vizuālo stilu „Plasma“ darbvirsmai",
+-        "Description[nb]": "Vinduspynt som bruker Breeze-stilen for Plasma-skrivebordet",
+-        "Description[nl]": "Vensterdecoratie met gebruik van de visuele stijl Breeze voor het Plasma bureaublad",
+-        "Description[nn]": "Vindaugspynt som brukar Breeze-stilen for Plasma-skrivebordet",
+-        "Description[pa]": "ਪਲਾਜ਼ਮਾ ਡੈਸਕਟਾਪ ਲਈ ਬਰੀਜ਼ ਦਿੱਖ ਸਟਾਈਲ ਦੀ ਵਰਤੋਂ ਕਰਕੇ ਵਿੰਡੋ ਸਜਾਵਟ",
+-        "Description[pl]": "Okna zgodne ze stylem Bryzy dla Pulpitu Plazmy",
+-        "Description[pt]": "Decoração de janelas utilizando o estilo visual Brisa para o Ambiente de Trabalho Plasma",
+-        "Description[pt_BR]": "Decoração de janelas que usa o estilo visual Breeze para o Plasma Desktop",
+-        "Description[ro]": "Decorații de fereastră folosind stilul vizual Briză pentru biroul Plasma",
+-        "Description[ru]": "Оформление окон Breeze",
+-        "Description[sa]": "प्लाज्मा डेस्कटॉप् कृते Breeze दृश्यशैल्याः उपयोगेन विण्डो अलङ्कारः",
+-        "Description[sk]": "Dekorácia okien pomocou vizuálneho štýlu Vánok pre plochu Plasma",
+-        "Description[sl]": "Okraski oken, ki uporabljajo vidni slog teme Sapica za namizje Plasma",
+-        "Description[sr@ijekavian]": "Декорација прозора са Поветарцем као визуелним стилом за плазма површ.",
+-        "Description[sr@ijekavianlatin]": "Dekoracija prozora sa Povetarcem kao vizuelnim stilom za plasma površ.",
+-        "Description[sr@latin]": "Dekoracija prozora sa Povetarcem kao vizuelnim stilom za plasma površ.",
+-        "Description[sr]": "Декорација прозора са Поветарцем као визуелним стилом за плазма површ.",
+-        "Description[sv]": "Fönsterdekoration med den visuella stilen Breeze för Plasma skrivbord",
+-        "Description[ta]": "பிரீஸ் பாங்கிலுள்ள பிளாஸ்மா பணிமேடைக்கான விளிம்புத்திட்டம்",
+-        "Description[tg]": "Ороиши равзана бо истифодаи услуби намоёнии Насим барои мизи кории Plasma",
+-        "Description[tr]": "Plasma Masaüstü için Esinti görsel biçemini kullanan pencere dekorasyonu",
+-        "Description[uk]": "Обрамлення вікон з використанням візуального стилю Breeze для стільничного середовища Плазми",
+-        "Description[zh_CN]": "Breeze 微风外观样式的 Plasma 桌面窗口装饰",
+-        "Description[zh_TW]": "使用 Plasma 桌面 Breeze 視覺樣式的視窗裝飾",
++        "Description": "Breeze window decoration with a translucent titlebar",
+         "EnabledByDefault": true,
+-        "Name": "Breeze",
+-        "Name[ar]": "النسيم",
+-        "Name[ast]": "Breeze",
+-        "Name[az]": "Breeze",
+-        "Name[bg]": "Breeze",
+-        "Name[ca@valencia]": "Brisa",
+-        "Name[ca]": "Brisa",
+-        "Name[cs]": "Breeze",
+-        "Name[da]": "Breeze",
+-        "Name[de]": "Breeze",
+-        "Name[el]": "Breeze",
+-        "Name[en_GB]": "Breeze",
+-        "Name[eo]": "Breeze",
+-        "Name[es]": "Brisa",
+-        "Name[et]": "Breeze",
+-        "Name[eu]": "Brisa",
+-        "Name[fi]": "Breeze",
+-        "Name[fr]": "Breeze",
+-        "Name[gl]": "Brisa",
+-        "Name[he]": "בריזה",
+-        "Name[hi]": "ब्रीज़",
+-        "Name[hu]": "Breeze",
+-        "Name[ia]": "Brisa (Breeze)",
+-        "Name[id]": "Breeze",
+-        "Name[is]": "Breeze",
+-        "Name[it]": "Brezza",
+-        "Name[ja]": "Breeze",
+-        "Name[ka]": "Breeze",
+-        "Name[ko]": "Breeze",
+-        "Name[lt]": "Breeze",
+-        "Name[lv]": "Breeze",
+-        "Name[nb]": "Breeze",
+-        "Name[nl]": "Breeze",
+-        "Name[nn]": "Breeze",
+-        "Name[pa]": "ਬਰੀਜ਼",
+-        "Name[pl]": "Bryza",
+-        "Name[pt]": "Brisa",
+-        "Name[pt_BR]": "Breeze",
+-        "Name[ro]": "Briză",
+-        "Name[ru]": "Breeze",
+-        "Name[sa]": "वायुः",
+-        "Name[sk]": "Vánok",
+-        "Name[sl]": "Sapica",
+-        "Name[sq]": "Breeze",
+-        "Name[sr@ijekavian]": "Поветарац",
+-        "Name[sr@ijekavianlatin]": "Povetarac",
+-        "Name[sr@latin]": "Povetarac",
+-        "Name[sr]": "Поветарац",
+-        "Name[sv]": "Breeze",
+-        "Name[ta]": "பிரீஸ்",
+-        "Name[tg]": "Насим",
+-        "Name[tr]": "Esinti",
+-        "Name[uk]": "Breeze",
+-        "Name[zh_CN]": "Breeze 微风",
+-        "Name[zh_TW]": "Breeze"
++        "Name": "Breeze Transparent"
+     },
+-    "X-KDE-ConfigModule": "kcm_breezedecoration",
++    "X-KDE-ConfigModule": "kcm_breezetransparentdecoration",
+     "org.kde.kdecoration3": {
+-        "blur": false,
++        "blur": true,
+         "recommendedBorderSize": "None"
+     }
+ }
+diff --git a/kdecoration/breezedecoration.cpp b/kdecoration/breezedecoration.cpp
+index 48afd7b..5dda960 100644
+--- a/kdecoration/breezedecoration.cpp
++++ b/kdecoration/breezedecoration.cpp
+@@ -24,6 +24,8 @@
+ #include <KPluginFactory>
+ #include <KSharedConfig>
+ 
++#include <algorithm>
++
+ #include <KColorScheme>
+ #include <QDBusConnection>
+ #include <QDBusMessage>
+@@ -156,15 +158,30 @@ void Decoration::setOpacity(qreal value)
+ //________________________________________________________________
+ QColor Decoration::titleBarColor() const
+ {
++    QColor color;
+     if (hideTitleBar()) {
+-        return window()->color(ColorGroup::Inactive, ColorRole::TitleBar);
++        color = window()->color(ColorGroup::Inactive, ColorRole::TitleBar);
+     } else if (m_animation->state() == QAbstractAnimation::Running) {
+-        return KColorUtils::mix(window()->color(ColorGroup::Inactive, ColorRole::TitleBar),
+-                                window()->color(ColorGroup::Active, ColorRole::TitleBar),
+-                                m_opacity);
++        color = KColorUtils::mix(window()->color(ColorGroup::Inactive, ColorRole::TitleBar),
++                                 window()->color(ColorGroup::Active, ColorRole::TitleBar),
++                                 m_opacity);
+     } else {
+-        return window()->color(window()->isActive() ? ColorGroup::Active : ColorGroup::Inactive, ColorRole::TitleBar);
++        color = window()->color(window()->isActive() ? ColorGroup::Active : ColorGroup::Inactive, ColorRole::TitleBar);
++    }
++
++    color.setAlphaF(color.alphaF() * backgroundOpacity());
++    return color;
++}
++
++//________________________________________________________________
++qreal Decoration::backgroundOpacity() const
++{
++    // translucency requires an alpha channel, i.e. compositing
++    if (!(m_internalSettings && settings()->isAlphaChannelSupported())) {
++        return 1.0;
+     }
++
++    return std::clamp(m_internalSettings->windowOpacity(), 0, 100) / 100.0;
+ }
+ 
+ //________________________________________________________________
+@@ -243,7 +260,9 @@ bool Decoration::init()
+     connect(window(), &KDecoration3::DecoratedWindow::adjacentScreenEdgesChanged, this, &Decoration::updateTitleBar);
+     connect(window(), &KDecoration3::DecoratedWindow::widthChanged, this, &Decoration::updateTitleBar);
+     connect(window(), &KDecoration3::DecoratedWindow::maximizedChanged, this, &Decoration::updateTitleBar);
+-    connect(window(), &KDecoration3::DecoratedWindow::maximizedChanged, this, &Decoration::setOpaque);
++    connect(window(), &KDecoration3::DecoratedWindow::maximizedChanged, this, &Decoration::updateTranslucency);
++    connect(window(), &KDecoration3::DecoratedWindow::sizeChanged, this, &Decoration::updateTranslucency);
++    connect(this, &KDecoration3::Decoration::bordersChanged, this, &Decoration::updateTranslucency);
+ 
+     connect(window(), &KDecoration3::DecoratedWindow::widthChanged, this, &Decoration::updateButtonsGeometry);
+     connect(window(), &KDecoration3::DecoratedWindow::maximizedChanged, this, &Decoration::updateButtonsGeometry);
+@@ -388,6 +407,34 @@ void Decoration::reconfigure()
+ 
+     // shadow
+     updateShadow();
++
++    // opacity and blur
++    updateTranslucency();
++}
++
++//________________________________________________________________
++void Decoration::updateTranslucency()
++{
++    const bool translucent = backgroundOpacity() < 1.0;
++
++    // only claim to be opaque when the titlebar is actually painted opaque
++    setOpaque(isMaximized() && !translucent);
++
++    if (!(translucent && m_internalSettings->windowBlurEnabled())) {
++        setBlurRegion(QRegion());
++        return;
++    }
++
++    // blur behind the whole decoration, following its rounded corners.
++    // KWin only uses the part of the region that lies outside the client area
++    const QRectF decorationRect(rect());
++    if (isMaximized() || hasNoBorders() || m_scaledCornerRadius <= 0) {
++        setBlurRegion(QRegion(decorationRect.toAlignedRect()));
++    } else {
++        QPainterPath path;
++        path.addRoundedRect(decorationRect, m_scaledCornerRadius, m_scaledCornerRadius);
++        setBlurRegion(QRegion(path.toFillPolygon().toPolygon()));
++    }
+ }
+ 
+ QMarginsF Decoration::bordersFor(qreal scale) const
+@@ -575,7 +622,9 @@ void Decoration::paint(QPainter *painter, const QRectF &repaintRegion)
+         painter->save();
+         painter->setRenderHint(QPainter::Antialiasing);
+         painter->setPen(Qt::NoPen);
+-        painter->setBrush(window()->color(window()->isActive() ? ColorGroup::Active : ColorGroup::Inactive, ColorRole::Frame));
++        auto frameColor = window()->color(window()->isActive() ? ColorGroup::Active : ColorGroup::Inactive, ColorRole::Frame);
++        frameColor.setAlphaF(frameColor.alphaF() * backgroundOpacity());
++        painter->setBrush(frameColor);
+ 
+         // clip away the top part
+         if (!hideTitleBar()) {
+@@ -640,15 +689,22 @@ void Decoration::paintTitleBar(QPainter *painter, const QRectF &repaintRegion)
+         painter->setBrush(titleBarColor());
+     }
+ 
++    // with a translucent titlebar, painting both brushes on top of each other would increase its opacity
++    const bool translucent = backgroundOpacity() < 1.0;
++
+     if (isMaximized() || !settings()->isAlphaChannelSupported()) {
+-        painter->setBrush(backBrush);
+-        painter->drawRect(rect);
++        if (!translucent) {
++            painter->setBrush(backBrush);
++            painter->drawRect(rect);
++        }
+ 
+         painter->setBrush(frontBrush);
+         painter->drawRect(rect);
+     } else if (window()->isShaded()) {
+-        painter->setBrush(backBrush);
+-        painter->drawRoundedRect(rect, m_scaledCornerRadius, m_scaledCornerRadius);
++        if (!translucent) {
++            painter->setBrush(backBrush);
++            painter->drawRoundedRect(rect, m_scaledCornerRadius, m_scaledCornerRadius);
++        }
+ 
+         painter->setBrush(frontBrush);
+         painter->drawRoundedRect(rect, m_scaledCornerRadius, m_scaledCornerRadius);
+@@ -662,8 +718,10 @@ void Decoration::paintTitleBar(QPainter *painter, const QRectF &repaintRegion)
+             painter->drawRect(QRectF(r.bottomLeft() - QPointF(0, m_scaledCornerRadius), r.bottomRight()));
+         };
+ 
+-        painter->setBrush(backBrush);
+-        drawThe(rect);
++        if (!translucent) {
++            painter->setBrush(backBrush);
++            drawThe(rect);
++        }
+ 
+         painter->setBrush(frontBrush);
+         drawThe(rect);
+@@ -861,6 +919,7 @@ void Decoration::updateScale()
+ {
+     setScaledCornerRadius();
+     recalculateBorders();
++    updateTranslucency();
+ }
+ } // namespace
+ 
+diff --git a/kdecoration/breezedecoration.h b/kdecoration/breezedecoration.h
+index 72694c5..b585869 100644
+--- a/kdecoration/breezedecoration.h
++++ b/kdecoration/breezedecoration.h
+@@ -67,6 +67,7 @@ public:
+     //*@name colors
+     //@{
+     QColor titleBarColor() const;
++    qreal backgroundOpacity() const;
+     QColor fontColor() const;
+     //@}
+ 
+@@ -95,6 +96,7 @@ private Q_SLOTS:
+     void updateTitleBar();
+     void updateAnimationState();
+     void updateScale();
++    void updateTranslucency();
+ 
+ private:
+     //* return the rect in which caption will be drawn
+diff --git a/kdecoration/breezesettingsdata.kcfg b/kdecoration/breezesettingsdata.kcfg
+index a91f73c..1c96877 100644
+--- a/kdecoration/breezesettingsdata.kcfg
++++ b/kdecoration/breezesettingsdata.kcfg
+@@ -3,7 +3,7 @@
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+       http://www.kde.org/standards/kcfg/1.0/kcfg.xsd" >
+-  <kcfgfile name="breezerc"/>
++  <kcfgfile name="breezetransparentrc"/>
+ 
+   <!-- common options -->
+   <group name="Common">
+@@ -42,6 +42,18 @@
+     <entry name="RoundedCorners" type = "Bool">
+       <default>true</default>
+     </entry>
++
++    <!-- window background opacity, shared between widget style and window decoration -->
++    <entry name="WindowOpacity" type="Int">
++       <default>85</default>
++       <min>0</min>
++       <max>100</max>
++    </entry>
++
++    <!-- blur the background of translucent windows -->
++    <entry name="WindowBlurEnabled" type="Bool">
++        <default>true</default>
++    </entry>
+   </group>
+ 
+   <group name="Windeco">
+diff --git a/kdecoration/breezesettingsprovider.cpp b/kdecoration/breezesettingsprovider.cpp
+index f91b81f..58e9cd4 100644
+--- a/kdecoration/breezesettingsprovider.cpp
++++ b/kdecoration/breezesettingsprovider.cpp
+@@ -17,7 +17,7 @@ SettingsProvider *SettingsProvider::s_self = nullptr;
+ 
+ //__________________________________________________________________
+ SettingsProvider::SettingsProvider()
+-    : m_config(KSharedConfig::openConfig(QStringLiteral("breezerc")))
++    : m_config(KSharedConfig::openConfig(QStringLiteral("breezetransparentrc")))
+ {
+     reconfigure();
+ }
+diff --git a/kdecoration/config/CMakeLists.txt b/kdecoration/config/CMakeLists.txt
+index e5e56e3..b2871f8 100644
+--- a/kdecoration/config/CMakeLists.txt
++++ b/kdecoration/config/CMakeLists.txt
+@@ -13,10 +13,10 @@ ki18n_wrap_ui(breezedecoration_config_SRCS
+    ui/breezeexceptionlistwidget.ui
+ )
+ 
+-kcoreaddons_add_plugin(kcm_breezedecoration SOURCES kcm_breezedecoration.cpp ${breezedecoration_config_SRCS} INSTALL_NAMESPACE "${KDECORATION_KCM_PLUGIN_DIR}")
+-kconfig_add_kcfg_files(kcm_breezedecoration ../breezesettings.kcfgc)
+-target_include_directories(kcm_breezedecoration PRIVATE ${CMAKE_SOURCE_DIR}/kdecoration ${CMAKE_BINARY_DIR}/kdecoration/)
+-target_link_libraries(kcm_breezedecoration
++kcoreaddons_add_plugin(kcm_breezetransparentdecoration SOURCES kcm_breezetransparentdecoration.cpp ${breezedecoration_config_SRCS} INSTALL_NAMESPACE "${KDECORATION_KCM_PLUGIN_DIR}")
++kconfig_add_kcfg_files(kcm_breezetransparentdecoration ../breezesettings.kcfgc)
++target_include_directories(kcm_breezetransparentdecoration PRIVATE ${CMAKE_SOURCE_DIR}/kdecoration ${CMAKE_BINARY_DIR}/kdecoration/)
++target_link_libraries(kcm_breezetransparentdecoration
+     PUBLIC
+         Qt6::Core
+         Qt6::Gui
+@@ -29,14 +29,14 @@ target_link_libraries(kcm_breezedecoration
+         KF6::IconThemes
+         KF6::KCMUtils
+ )
+-kcmutils_generate_desktop_file(kcm_breezedecoration)
++kcmutils_generate_desktop_file(kcm_breezetransparentdecoration)
+ 
+ # kcmshell6 < 6.27.0 doesn't know the --smoke-test param, so skip this test for
+ # now.
+ # TODO: Drop this when KF6_MIN_VERSION >= 6.27.0
+ if(KF6KCMUtils_VERSION VERSION_GREATER_EQUAL "6.27.0")
+-    add_test(NAME kcm_breezedecoration_smoketest COMMAND kcmshell6 -style Breeze --smoke-test ${KDECORATION_KCM_PLUGIN_DIR}/kcm_breezedecoration)
+-    set_tests_properties(kcm_breezedecoration_smoketest PROPERTIES
++    add_test(NAME kcm_breezetransparentdecoration_smoketest COMMAND kcmshell6 -style BreezeTransparent --smoke-test ${KDECORATION_KCM_PLUGIN_DIR}/kcm_breezetransparentdecoration)
++    set_tests_properties(kcm_breezetransparentdecoration_smoketest PROPERTIES
+         ENVIRONMENT_MODIFICATION QT_PLUGIN_PATH=path_list_prepend:${CMAKE_BINARY_DIR}/bin
+     )
+ endif()
+diff --git a/kdecoration/config/breezeconfigwidget.cpp b/kdecoration/config/breezeconfigwidget.cpp
+index 2c273e9..61cb661 100644
+--- a/kdecoration/config/breezeconfigwidget.cpp
++++ b/kdecoration/config/breezeconfigwidget.cpp
+@@ -21,7 +21,7 @@ namespace Breeze
+ //_________________________________________________________
+ ConfigWidget::ConfigWidget(QObject *parent, const KPluginMetaData &data, const QVariantList & /*args*/)
+     : KCModule(parent, data)
+-    , m_configuration(KSharedConfig::openConfig(QStringLiteral("breezerc")))
++    , m_configuration(KSharedConfig::openConfig(QStringLiteral("breezetransparentrc")))
+     , m_changed(false)
+ {
+     // configuration
+diff --git a/kdecoration/config/kcm_breezedecoration.cpp b/kdecoration/config/kcm_breezedecoration.cpp
+deleted file mode 100644
+index 41091fb..0000000
+--- a/kdecoration/config/kcm_breezedecoration.cpp
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#include "breezeconfigwidget.h"
+-#include <KPluginFactory>
+-
+-K_PLUGIN_CLASS_WITH_JSON(Breeze::ConfigWidget, "kcm_breezedecoration.json")
+-
+-#include "kcm_breezedecoration.moc"
+diff --git a/kdecoration/config/kcm_breezedecoration.json b/kdecoration/config/kcm_breezedecoration.json
+deleted file mode 100644
+index bc1a053..0000000
+--- a/kdecoration/config/kcm_breezedecoration.json
++++ /dev/null
+@@ -1,139 +0,0 @@
+-{
+-    "KPlugin": {
+-        "Description": "Modify the appearance of window decorations",
+-        "Description[ar]": "عدّل مظهر زخرفات النّوافذ",
+-        "Description[az]": "Pəncərə başlıqlarının görünüşünü dəyişmək",
+-        "Description[bg]": "Промяна на външния вид на декорацията на прозорците",
+-        "Description[ca@valencia]": "Modifica l'aparença de les decoracions de les finestres",
+-        "Description[ca]": "Modifica l'aparença de les decoracions de les finestres",
+-        "Description[cs]": "Změnit vzhled dekorace oken",
+-        "Description[de]": "Das Erscheinungsbild der Fensterdekorationen ändern",
+-        "Description[el]": "Τροποποίηση της εμφάνισης των διακοσμητικών στοιχείων των παραθύρων",
+-        "Description[en_GB]": "Modify the appearance of window decorations",
+-        "Description[eo]": "Modifi la aspekton de fenestraĵaj ornamaĵoj",
+-        "Description[es]": "Modificar el aspecto de las decoraciones de ventanas",
+-        "Description[eu]": "Leiho-apainduren itxura aldatu",
+-        "Description[fi]": "Muuta ikkunakoristeiden ulkoasua",
+-        "Description[fr]": "Modifier l'apparence des décorations de fenêtres",
+-        "Description[gl]": "Modifica a aparencia da decoración da xanela.",
+-        "Description[he]": "שינוי מראה עיטורי החלונות",
+-        "Description[hu]": "Az ablakdekorációk megjelenésének módosítása",
+-        "Description[ia]": "Modifica le apparentia de decorationes de fenestra",
+-        "Description[id]": "Ubah tampilan dekorasi jendela",
+-        "Description[is]": "Breyta útliti gluggaskreytinga",
+-        "Description[it]": "Modifica l'aspetto delle decorazioni delle finestre",
+-        "Description[ja]": "ウィンドウ装飾の見た目をカスタマイズできます",
+-        "Description[ka]": "ფანჯრის დეკორაციებს გარეგნობის შეცვლა",
+-        "Description[ko]": "창 장식의 모양을 수정합니다",
+-        "Description[lt]": "Modifiktuoti lango dekoracijų išvaizdą",
+-        "Description[lv]": "Pielāgojiet logu noformējumu",
+-        "Description[nl]": "Wijzig het uiterlijk van vensterdecoraties",
+-        "Description[nn]": "Endra utsjånad på vindaugspynt",
+-        "Description[pa]": "ਵਿੰਡੋ ਸਜਾਵਟ ਦੀ ਦਿੱਖ ਨੂੰ ਸੋਧੋ",
+-        "Description[pl]": "Zmień wygląd okien",
+-        "Description[pt]": "Modificar o aspeto das decorações de janelas",
+-        "Description[pt_BR]": "Modifica a aparência das decorações da janela",
+-        "Description[ro]": "Modifică aspectul decorațiilor pentru ferestre",
+-        "Description[ru]": "Настройка заголовков окон",
+-        "Description[sa]": "खिडकीसज्जानां स्वरूपं परिवर्तयन्तु",
+-        "Description[sk]": "Zmeniť vzhľad dekorácie okien",
+-        "Description[sl]": "Spremeni videz okenskih okraskov",
+-        "Description[sv]": "Ändra utseendet hos fönsterdekorationer",
+-        "Description[tr]": "Pencere dekorasyonlarının görünüşünü değiştirin",
+-        "Description[uk]": "Внесення змін до обрамлення вікон",
+-        "Description[zh_CN]": "调整窗口装饰外观",
+-        "Description[zh_TW]": "修改視窗裝飾的外觀",
+-        "Icon": "preferences-system-windows",
+-        "Name": "Breeze Window Decoration",
+-        "Name[ar]": "زخرفة نوافذ نسيم",
+-        "Name[az]": "Breeze pəncərə tərtibatı",
+-        "Name[bg]": "Декорации на прозорци Breeze",
+-        "Name[ca@valencia]": "Decoració Brisa de les finestres",
+-        "Name[ca]": "Decoració Brisa de les finestres",
+-        "Name[cs]": "Dekorace oken Breeze",
+-        "Name[de]": "Breeze-Fensterdekoration",
+-        "Name[el]": "Breeze διακόσμηση παραθύρου",
+-        "Name[en_GB]": "Breeze Window Decoration",
+-        "Name[eo]": "Breeze-fenestraĵornamoj",
+-        "Name[es]": "Decoración de ventanas Brisa",
+-        "Name[eu]": "Brisa leiho-apaindura",
+-        "Name[fi]": "Breeze-ikkunakoristelu",
+-        "Name[fr]": "Décoration de fenêtre pour Breeze",
+-        "Name[gl]": "Decoración de xanela de Brisa",
+-        "Name[he]": "עיטור חלונות בריזה",
+-        "Name[hu]": "Breeze ablakdekoráció",
+-        "Name[ia]": "Decoration de fenestra Breeze",
+-        "Name[id]": "Dekorasi Jendela Breeze",
+-        "Name[is]": "Breeze gluggaskreytingar",
+-        "Name[it]": "Decorazione delle finestre di Brezza",
+-        "Name[ja]": "Breeze のウィンドウ装飾",
+-        "Name[ka]": "Breeze -ის ფანჯრის დეკორაცია",
+-        "Name[ko]": "Breeze 창 장식",
+-        "Name[lt]": "Breeze lango dekoracijos",
+-        "Name[lv]": "„Breeze“ logu noformējums",
+-        "Name[nl]": "Breeze vensterdecoratie",
+-        "Name[nn]": "Breeze-vindaugspynt",
+-        "Name[pa]": "ਬਰੀਜ਼ ਵਿੰਡੋ ਸਜਾਵਟ",
+-        "Name[pl]": "Wygląd okien Bryzy",
+-        "Name[pt]": "Decoração de Janelas Brisa",
+-        "Name[pt_BR]": "Decorações da janela Breeze",
+-        "Name[ro]": "Decorații pentru ferestre Briză",
+-        "Name[ru]": "Оформление окон Breeze",
+-        "Name[sa]": "हवा खिडकी सजावट",
+-        "Name[sk]": "Dekorácie okien Vánok",
+-        "Name[sl]": "Okraski oken Sapice",
+-        "Name[sq]": "Dekorimet e Dritareve Breeze",
+-        "Name[sv]": "Breeze fönsterdekoration",
+-        "Name[tr]": "Esinti Pencere Dekorasyonu",
+-        "Name[uk]": "Обрамлення вікон Breeze",
+-        "Name[zh_CN]": "Breeze 微风窗口装饰",
+-        "Name[zh_TW]": "Breeze 視窗裝飾",
+-        "ServiceTypes": [
+-            "KCModule"
+-        ]
+-    },
+-    "X-KDE-Keywords": "breeze,decoration",
+-    "X-KDE-Keywords[ar]": "زخرفة,نسيم",
+-    "X-KDE-Keywords[az]": "breeze,decoration,tərtibat",
+-    "X-KDE-Keywords[bg]": "breeze,декорация",
+-    "X-KDE-Keywords[ca@valencia]": "brisa,decoració",
+-    "X-KDE-Keywords[ca]": "brisa,decoració",
+-    "X-KDE-Keywords[cs]": "breeze,dekorace",
+-    "X-KDE-Keywords[de]": "Breeze,Dekoration",
+-    "X-KDE-Keywords[el]": "breeze, διακόσμηση",
+-    "X-KDE-Keywords[en_GB]": "breeze,decoration",
+-    "X-KDE-Keywords[eo]": "breeze,fenestraĵornamoj",
+-    "X-KDE-Keywords[es]": "brisa,decoración de ventanas",
+-    "X-KDE-Keywords[eu]": "breeze,brisa,apaindura,apaingarria,apainketa",
+-    "X-KDE-Keywords[fi]": "breeze,koristelu",
+-    "X-KDE-Keywords[fr]": "breeze, décoration",
+-    "X-KDE-Keywords[gl]": "breeze,decoración",
+-    "X-KDE-Keywords[he]": "בריזה,עיטור",
+-    "X-KDE-Keywords[hu]": "breeze,dekoráció",
+-    "X-KDE-Keywords[ia]": "breeze,decoration",
+-    "X-KDE-Keywords[is]": "breeze,skreyting",
+-    "X-KDE-Keywords[it]": "brezza,decorazione",
+-    "X-KDE-Keywords[ja]": "breeze,decoration,デコレーション,装飾,そうしょく,デコレーション",
+-    "X-KDE-Keywords[ka]": "breeze,decoration,დეკორაცია",
+-    "X-KDE-Keywords[ko]": "장식",
+-    "X-KDE-Keywords[lt]": "breeze,dekoracijos,dekoracija",
+-    "X-KDE-Keywords[lv]": "breeze, logu noformējums,dekorācijas",
+-    "X-KDE-Keywords[nl]": "breeze,decoratie",
+-    "X-KDE-Keywords[nn]": "breeze,dekorasjonar,pynt",
+-    "X-KDE-Keywords[pl]": "breeze,dekoracja,bryza,wystrój",
+-    "X-KDE-Keywords[pt]": "brisa,decoração",
+-    "X-KDE-Keywords[pt_BR]": "breeze,decoração",
+-    "X-KDE-Keywords[ro]": "briză,decorație",
+-    "X-KDE-Keywords[ru]": "breeze,decoration,оформление",
+-    "X-KDE-Keywords[sa]": "वायुः,अलंकारः",
+-    "X-KDE-Keywords[sk]": "bríza,dekorácia",
+-    "X-KDE-Keywords[sl]": "sapica,dekoracija",
+-    "X-KDE-Keywords[sq]": "breeze,decoration",
+-    "X-KDE-Keywords[sv]": "breeze,dekoration",
+-    "X-KDE-Keywords[tr]": "breeze,esinti,dekorasyon",
+-    "X-KDE-Keywords[uk]": "breeze,decoration,бриз,декорації,декорація,обрамлення",
+-    "X-KDE-Keywords[zh_CN]": "breeze,weifeng,zhuangshi,xiushi,微风,装饰,修饰",
+-    "X-KDE-Keywords[zh_TW]": "breeze,裝飾",
+-    "X-KDE-ParentApp": "kcontrol",
+-    "X-KDE-Weight": 60
+-}
+diff --git a/kdecoration/config/kcm_breezetransparentdecoration.cpp b/kdecoration/config/kcm_breezetransparentdecoration.cpp
+new file mode 100644
+index 0000000..26c0952
+--- /dev/null
++++ b/kdecoration/config/kcm_breezetransparentdecoration.cpp
+@@ -0,0 +1,6 @@
++#include "breezeconfigwidget.h"
++#include <KPluginFactory>
++
++K_PLUGIN_CLASS_WITH_JSON(Breeze::ConfigWidget, "kcm_breezetransparentdecoration.json")
++
++#include "kcm_breezetransparentdecoration.moc"
+diff --git a/kdecoration/config/kcm_breezetransparentdecoration.json b/kdecoration/config/kcm_breezetransparentdecoration.json
+new file mode 100644
+index 0000000..6fd0095
+--- /dev/null
++++ b/kdecoration/config/kcm_breezetransparentdecoration.json
+@@ -0,0 +1,55 @@
++{
++    "KPlugin": {
++        "Description": "Modify the appearance of window decorations",
++        "Description[ar]": "عدّل مظهر زخرفات النّوافذ",
++        "Description[az]": "Pəncərə başlıqlarının görünüşünü dəyişmək",
++        "Description[bg]": "Промяна на външния вид на декорацията на прозорците",
++        "Description[ca@valencia]": "Modifica l'aparença de les decoracions de les finestres",
++        "Description[ca]": "Modifica l'aparença de les decoracions de les finestres",
++        "Description[cs]": "Změnit vzhled dekorace oken",
++        "Description[de]": "Das Erscheinungsbild der Fensterdekorationen ändern",
++        "Description[el]": "Τροποποίηση της εμφάνισης των διακοσμητικών στοιχείων των παραθύρων",
++        "Description[en_GB]": "Modify the appearance of window decorations",
++        "Description[eo]": "Modifi la aspekton de fenestraĵaj ornamaĵoj",
++        "Description[es]": "Modificar el aspecto de las decoraciones de ventanas",
++        "Description[eu]": "Leiho-apainduren itxura aldatu",
++        "Description[fi]": "Muuta ikkunakoristeiden ulkoasua",
++        "Description[fr]": "Modifier l'apparence des décorations de fenêtres",
++        "Description[gl]": "Modifica a aparencia da decoración da xanela.",
++        "Description[he]": "שינוי מראה עיטורי החלונות",
++        "Description[hu]": "Az ablakdekorációk megjelenésének módosítása",
++        "Description[ia]": "Modifica le apparentia de decorationes de fenestra",
++        "Description[id]": "Ubah tampilan dekorasi jendela",
++        "Description[is]": "Breyta útliti gluggaskreytinga",
++        "Description[it]": "Modifica l'aspetto delle decorazioni delle finestre",
++        "Description[ja]": "ウィンドウ装飾の見た目をカスタマイズできます",
++        "Description[ka]": "ფანჯრის დეკორაციებს გარეგნობის შეცვლა",
++        "Description[ko]": "창 장식의 모양을 수정합니다",
++        "Description[lt]": "Modifiktuoti lango dekoracijų išvaizdą",
++        "Description[lv]": "Pielāgojiet logu noformējumu",
++        "Description[nl]": "Wijzig het uiterlijk van vensterdecoraties",
++        "Description[nn]": "Endra utsjånad på vindaugspynt",
++        "Description[pa]": "ਵਿੰਡੋ ਸਜਾਵਟ ਦੀ ਦਿੱਖ ਨੂੰ ਸੋਧੋ",
++        "Description[pl]": "Zmień wygląd okien",
++        "Description[pt]": "Modificar o aspeto das decorações de janelas",
++        "Description[pt_BR]": "Modifica a aparência das decorações da janela",
++        "Description[ro]": "Modifică aspectul decorațiilor pentru ferestre",
++        "Description[ru]": "Настройка заголовков окон",
++        "Description[sa]": "खिडकीसज्जानां स्वरूपं परिवर्तयन्तु",
++        "Description[sk]": "Zmeniť vzhľad dekorácie okien",
++        "Description[sl]": "Spremeni videz okenskih okraskov",
++        "Description[sv]": "Ändra utseendet hos fönsterdekorationer",
++        "Description[tr]": "Pencere dekorasyonlarının görünüşünü değiştirin",
++        "Description[uk]": "Внесення змін до обрамлення вікон",
++        "Description[zh_CN]": "调整窗口装饰外观",
++        "Description[zh_TW]": "修改視窗裝飾的外觀",
++        "Icon": "preferences-system-windows",
++        "Name": "Breeze Transparent Window Decoration",
++        "ServiceTypes": [
++            "KCModule"
++        ]
++    },
++    "X-KDE-Keywords": "breeze,transparent,translucent,blur,decoration",
++    "X-KDE-ParentApp": "kcontrol",
++    "X-KDE-Weight": 60
++}
+diff --git a/kstyle/CMakeLists.txt b/kstyle/CMakeLists.txt
+index d5c8989..7a86680 100644
+--- a/kstyle/CMakeLists.txt
++++ b/kstyle/CMakeLists.txt
+@@ -120,8 +120,9 @@ endif()
+ 
+ 
+ ########### install files ###############
++set_target_properties(breeze${QT_MAJOR_VERSION} PROPERTIES OUTPUT_NAME breezetransparent${QT_MAJOR_VERSION})
+ install(TARGETS breeze${QT_MAJOR_VERSION}  DESTINATION ${KDE_INSTALL_QTPLUGINDIR}/styles/)
+-install(FILES breeze.themerc  DESTINATION  ${KDE_INSTALL_DATADIR}/kstyle/themes)
++install(FILES breezetransparent.themerc  DESTINATION  ${KDE_INSTALL_DATADIR}/kstyle/themes)
+ 
+ ########### subdirectories ###############
+ 
+diff --git a/kstyle/breeze.json b/kstyle/breeze.json
+index a3d2b19..711e715 100644
+--- a/kstyle/breeze.json
++++ b/kstyle/breeze.json
+@@ -1 +1 @@
+-{ "Keys": [ "Breeze" ] }
++{ "Keys": [ "BreezeTransparent" ] }
+diff --git a/kstyle/breeze.kcfg b/kstyle/breeze.kcfg
+index 3488351..8213b41 100644
+--- a/kstyle/breeze.kcfg
++++ b/kstyle/breeze.kcfg
+@@ -3,7 +3,7 @@
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+ 
+-  <kcfgfile name="breezerc"/>
++  <kcfgfile name="breezetransparentrc"/>
+ 
+   <!-- common options -->
+   <group name="Common">
+@@ -36,6 +36,18 @@
+         <default>false</default>
+     </entry>
+ 
++    <!-- window background opacity, shared between widget style and window decoration -->
++    <entry name="WindowOpacity" type="Int">
++       <default>85</default>
++       <min>0</min>
++       <max>100</max>
++    </entry>
++
++    <!-- blur the background of translucent windows -->
++    <entry name="WindowBlurEnabled" type="Bool">
++        <default>true</default>
++    </entry>
++
+   </group>
+ 
+   <!-- widget style -->
+@@ -182,6 +194,19 @@
+         <default>100</default>
+     </entry>
+ 
++    <!-- also make views (lists, trees, text editors) of translucent windows translucent -->
++    <entry name="TranslucentViews" type="Bool">
++        <default>true</default>
++    </entry>
++
++    <!--
++        comma separated list of application names (as reported by QCoreApplication::applicationName()
++        or the executable name) for which window translucency must be disabled
++    -->
++    <entry name="WindowOpacityBlackList" type="StringList">
++       <default></default>
++    </entry>
++
+   </group>
+ 
+ </kcfg>
+diff --git a/kstyle/breeze.themerc b/kstyle/breeze.themerc
+deleted file mode 100644
+index 486322f..0000000
+--- a/kstyle/breeze.themerc
++++ /dev/null
+@@ -1,115 +0,0 @@
+-[Misc]
+-Name=Breeze
+-Name[ar]=نسيم
+-Name[ast]=Breeze
+-Name[az]=Breeze
+-Name[bg]=Breeze
+-Name[bs]=Breeze
+-Name[ca]=Brisa
+-Name[ca@valencia]=Brisa
+-Name[cs]=Breeze
+-Name[da]=Breeze
+-Name[de]=Breeze
+-Name[el]=Breeze
+-Name[en_GB]=Breeze
+-Name[eo]=Breeze
+-Name[es]=Brisa
+-Name[et]=Breeze
+-Name[eu]=Breeze
+-Name[fi]=Breeze
+-Name[fr]=Brise
+-Name[gl]=Brisa
+-Name[he]=בריזה
+-Name[hi]=ब्रीज़
+-Name[hu]=Breeze
+-Name[ia]=Brisa
+-Name[id]=Breeze
+-Name[is]=Breeze
+-Name[it]=Brezza
+-Name[ja]=Breeze
+-Name[ka]=Breeze
+-Name[ko]=Breeze
+-Name[lt]=Breeze
+-Name[lv]=Breeze
+-Name[nb]=Breeze
+-Name[nds]=Breeze
+-Name[nl]=Breeze
+-Name[nn]=Breeze
+-Name[pa]=ਬਰੀਜ਼
+-Name[pl]=Bryza
+-Name[pt]=Brisa
+-Name[pt_BR]=Breeze
+-Name[ro]=Briză
+-Name[ru]=Breeze
+-Name[sa]=वायुः
+-Name[sk]=Vánok
+-Name[sl]=Sapica
+-Name[sr]=Поветарац
+-Name[sr@ijekavian]=Поветарац
+-Name[sr@ijekavianlatin]=Povetarac
+-Name[sr@latin]=Povetarac
+-Name[sv]=Breeze
+-Name[ta]=பிரீஸ்
+-Name[tg]=Насим
+-Name[tr]=Esinti
+-Name[uk]=Breeze
+-Name[zh_CN]=Breeze 微风
+-Name[zh_TW]=Breeze
+-ConfigPage=kstyle_config/breezestyleconfig
+-Comment=Widget style for KDE Frameworks
+-Comment[ar]=نمط ودجات أُطر عمل كِيدِي
+-Comment[az]=KDE Frameworks üçün Vidjet üslubu
+-Comment[bg]=Стил на приставките за KDE Frameworks
+-Comment[bs]=Stil kontrola za KDE Frameworks
+-Comment[ca]=Estil per als ginys dels Frameworks del KDE
+-Comment[ca@valencia]=Estil per als ginys dels Frameworks de KDE
+-Comment[cs]=Styl widgetu pro KDE Frameworks
+-Comment[da]=Kontrolstil til KDE Frameworks
+-Comment[de]=Stil der Bedienelemente für KDE Frameworks
+-Comment[el]=Στιλ γραφικών συστατικών για το KDE Frameworks
+-Comment[en_GB]=Widget style for KDE Frameworks
+-Comment[eo]=Fenestraĵa stilo por KDE Frameworks
+-Comment[es]=Estilo de elementos gráficos para KDE Frameworks
+-Comment[et]=KDE Frameworksi vidinastiil
+-Comment[eu]=KDE Frameworks-erako trepeta estiloa
+-Comment[fi]=KDE Frameworksin käyttöliittymätyyli
+-Comment[fr]=Style de composants graphiques pour KDE
+-Comment[gl]=Estilo dos trebellos para a infraestrutura de KDE.
+-Comment[he]=סגנון יישומונים לתשתיות של KDE
+-Comment[hi]=केडीई फ्रेमवर्कस के लिए विजेट शैली
+-Comment[hu]=Eszközstílus a KDE Frameworkshöz
+-Comment[ia]=Stilo de Elemento Graphic de Fenestra (Widget) per Framework de KDE
+-Comment[id]=Gaya widget untuk Frameworks KDE
+-Comment[is]=Græjustíll fyrir KDE Frameworks
+-Comment[it]=Stile di oggetti per KDE Frameworks
+-Comment[ja]=KDE フレームワークのウィジェットスタイル
+-Comment[ka]=ვიჯეტის სტილი KDE Frameworks-თვის
+-Comment[ko]=KDE 프레임워크 위젯 스타일
+-Comment[lt]=KDE Frameworks valdiklių stilius
+-Comment[lv]=KDE „Frameworks“ satvara logdaļu stils
+-Comment[nb]=Elementstil for KDE-rammeverket
+-Comment[nds]=Bedeenelement-Stil för KDE-Rahmenwarken
+-Comment[nl]=Widget-stijl voor KDE Frameworks
+-Comment[nn]=Elementstil for KDE-rammeverket
+-Comment[pa]=KDE ਫਰੇਮਵਰਕਸ ਲਈ ਵਿਜੈਟ ਸਟਾਈਲ
+-Comment[pl]=Wygląd interfejsu dla Szkieletów KDE
+-Comment[pt]=Estilo de widget para Plataformas KDE
+-Comment[pt_BR]=Estilo do widget para o KDE Frameworks
+-Comment[ro]=Stil de controale grafice pentru Platforma KDE
+-Comment[ru]=Стиль графических элементов для KDE Frameworks
+-Comment[sa]=KDE Frameworks कृते विजेट् शैली
+-Comment[sk]=Štýl miniaplikácií pre KDE Frameworks
+-Comment[sl]=Slog gradnikov za ogrodje KDE
+-Comment[sr]=Стил виџета̂ за Радне оквире КДЕ‑а
+-Comment[sr@ijekavian]=Стил виџета̂ за Радне оквире КДЕ‑а
+-Comment[sr@ijekavianlatin]=Stil vidžetâ̂ za Radne okvire KDE‑a
+-Comment[sr@latin]=Stil vidžetâ̂ za Radne okvire KDE‑a
+-Comment[sv]=Grafisk komponentstil för KDE Ramverk
+-Comment[ta]=கே.டீ.யீ. நிரலகங்களுக்கான தோற்றத்திட்டம்
+-Comment[tg]=Услуби виҷет барои сохторҳои KDE
+-Comment[tr]=KDE Frameworks için araç takımı biçemi
+-Comment[uk]=Стиль віджетів KDE Frameworks
+-Comment[zh_CN]=KDE 框架的窗口部件外观样式
+-Comment[zh_TW]=KDE Frameworks 的元件樣式
+-[KDE]
+-WidgetStyle=Breeze
+diff --git a/kstyle/breezeblurhelper.cpp b/kstyle/breezeblurhelper.cpp
+index 786fa2b..75ade54 100644
+--- a/kstyle/breezeblurhelper.cpp
++++ b/kstyle/breezeblurhelper.cpp
+@@ -14,6 +14,7 @@
+ 
+ #include "breezeblurhelper.h"
+ #include "breezehelper.h"
++#include "breezepropertynames.h"
+ #include "breezestyleconfigdata.h"
+ 
+ #include <KWindowEffects>
+@@ -46,6 +47,11 @@ void BlurHelper::unregisterWidget(QWidget *widget)
+ {
+     // remove event filter
+     widget->removeEventFilter(this);
++
++    // translucent windows are not blurred anymore once unpolished
++    if (widget->property(PropertyNames::translucentWindow).toBool() && widget->windowHandle()) {
++        KWindowEffects::enableBlurBehind(widget->windowHandle(), false);
++    }
+ }
+ 
+ //___________________________________________________________
+@@ -54,7 +60,8 @@ bool BlurHelper::eventFilter(QObject *object, QEvent *event)
+     switch (event->type()) {
+     case QEvent::Hide:
+     case QEvent::Show:
+-    case QEvent::Resize: {
++    case QEvent::Resize:
++    case QEvent::WindowStateChange: {
+         // cast to widget and check
+         QWidget *widget(qobject_cast<QWidget *>(object));
+ 
+@@ -88,10 +95,14 @@ void BlurHelper::update(QWidget *widget) const
+     widget->winId(); // force creation of the window handle
+ 
+     QRegion region;
++    bool enable = true;
+     if (const auto menu = qobject_cast<QMenu *>(widget)) {
+         region = _helper->menuFrameRegion(menu);
++    } else if (widget->property(PropertyNames::translucentWindow).toBool()) {
++        // translucent top-level windows: blur the whole window, unless disabled or opaque
++        enable = StyleConfigData::windowBlurEnabled() && StyleConfigData::windowOpacity() < 100 && !widget->isFullScreen();
+     }
+-    KWindowEffects::enableBlurBehind(widget->windowHandle(), true, region);
++    KWindowEffects::enableBlurBehind(widget->windowHandle(), enable, region);
+ 
+     // force update
+     if (widget->isVisible()) {
+diff --git a/kstyle/breezeblurhelper.h b/kstyle/breezeblurhelper.h
+index d0c81d0..b66f18d 100644
+--- a/kstyle/breezeblurhelper.h
++++ b/kstyle/breezeblurhelper.h
+@@ -39,6 +39,9 @@ public:
+     //! event filter
+     bool eventFilter(QObject *, QEvent *) override;
+ 
++    //! update blur regions for given widget
++    void update(QWidget *) const;
++
+ protected:
+     //! install event filter to object, in a unique way
+     void addEventFilter(QObject *object)
+@@ -47,9 +50,6 @@ protected:
+         object->installEventFilter(this);
+     }
+ 
+-    //! update blur regions for given widget
+-    void update(QWidget *) const;
+-
+ private:
+     std::shared_ptr<Helper> _helper;
+ };
+diff --git a/kstyle/breezepropertynames.cpp b/kstyle/breezepropertynames.cpp
+index ee07596..d272ad8 100644
+--- a/kstyle/breezepropertynames.cpp
++++ b/kstyle/breezepropertynames.cpp
+@@ -23,4 +23,6 @@ const char PropertyNames::bordersSides[] = "_breeze_borders_sides";
+ const char PropertyNames::forceFrame[] = "_breeze_force_frame";
+ const char PropertyNames::statusBarSeparator[] = "_breeze_statusbar_separator";
+ const char PropertyNames::roundButton[] = "_kde_round_button";
++const char PropertyNames::translucentWindow[] = "_breeze_translucent_window";
++const char PropertyNames::noWindowTranslucency[] = "_breeze_no_window_translucency";
+ }
+diff --git a/kstyle/breezepropertynames.h b/kstyle/breezepropertynames.h
+index 7735778..ee9b806 100644
+--- a/kstyle/breezepropertynames.h
++++ b/kstyle/breezepropertynames.h
+@@ -24,6 +24,8 @@ struct PropertyNames {
+     static const char forceFrame[];
+     static const char statusBarSeparator[];
+     static const char roundButton[];
++    static const char translucentWindow[];
++    static const char noWindowTranslucency[];
+ };
+ 
+ }
+diff --git a/kstyle/breezestyle.cpp b/kstyle/breezestyle.cpp
+index f0d4dfe..a7fad8d 100644
+--- a/kstyle/breezestyle.cpp
++++ b/kstyle/breezestyle.cpp
+@@ -25,6 +25,8 @@
+ #include <KIconLoader>
+ #include <kguiaddons_version.h>
+ 
++#include <algorithm>
++
+ #include <QApplication>
+ #include <QBitmap>
+ #include <QCheckBox>
+@@ -32,6 +34,7 @@
+ #include <QDial>
+ #include <QDialog>
+ #include <QDialogButtonBox>
++#include <QFileInfo>
+ #include <QFormLayout>
+ #include <QGraphicsItem>
+ #include <QGraphicsProxyWidget>
+@@ -44,6 +47,7 @@
+ #include <QMenu>
+ #include <QMenuBar>
+ #include <QMetaEnum>
++#include <QPaintEngine>
+ #include <QPainter>
+ #include <QPushButton>
+ #include <QRadioButton>
+@@ -58,6 +62,7 @@
+ #include <QToolButton>
+ #include <QTreeView>
+ #include <QWidgetAction>
++#include <QWindow>
+ 
+ #if HAVE_QTDBUS
+ #include <QDBusConnection>
+@@ -498,6 +503,14 @@ void Style::polish(QWidget *widget)
+         }
+     }
+ 
++    // top-level window background translucency
++    if (widget->property(PropertyNames::translucentWindow).toBool()) {
++        // repolished (e.g. on theme change): the native window already has an alpha channel
++        _blurHelper->registerWidget(widget);
++    } else if (isTranslucentWindowCandidate(widget)) {
++        polishTranslucentWindow(widget);
++    }
++
+     // base class polishing
+     ParentStyleClass::polish(widget);
+ }
+@@ -1300,6 +1313,9 @@ void Style::drawPrimitive(PrimitiveElement element, const QStyleOption *option,
+     case PE_Widget:
+         fcn = &Style::drawWidgetPrimitive;
+         break;
++    case PE_PanelItemViewRow:
++        fcn = &Style::drawPanelItemViewRowPrimitive;
++        break;
+ 
+     // fallback
+     default:
+@@ -1318,9 +1334,32 @@ void Style::drawPrimitive(PrimitiveElement element, const QStyleOption *option,
+ 
+ bool Style::drawWidgetPrimitive(const QStyleOption *option, QPainter *painter, const QWidget *widget) const
+ {
+-    Q_UNUSED(option)
+     const auto drawBackground = _toolsAreaManager->hasHeaderColors() && _helper->shouldDrawToolsArea(widget);
+ 
++    // translucent top-level windows: Qt already filled the background with the opaque window color,
++    // replace it with its translucent counterpart
++    const bool translucentWindow = widget && widget->isWindow() && widget->property(PropertyNames::translucentWindow).toBool();
++    if (translucentWindow) {
++        renderTranslucentWindowBackground(painter, option->rect, widget);
++    }
++
++    // render the tools area (header) background, taking window translucency into account
++    const auto renderToolsArea = [&](const QRect &rect, const QBrush &brush) {
++        const qreal opacity = translucentWindow ? windowBackgroundOpacity(widget) : 1.0;
++        if (opacity < 1.0) {
++            auto color(brush.color());
++            color.setAlphaF(color.alphaF() * opacity);
++            painter->save();
++            painter->setCompositionMode(QPainter::CompositionMode_Source);
++            painter->fillRect(rect, color);
++            painter->restore();
++        } else {
++            painter->setPen(Qt::transparent);
++            painter->setBrush(brush);
++            painter->drawRect(rect);
++        }
++    };
++
+     auto mw = qobject_cast<const QMainWindow *>(widget);
+     if (mw && mw == mw->window()) {
+         painter->save();
+@@ -1341,9 +1380,7 @@ bool Style::drawWidgetPrimitive(const QStyleOption *option, QPainter *painter, c
+         auto color = _toolsAreaManager->palette().brush(mw->isActiveWindow() ? QPalette::Active : QPalette::Inactive, QPalette::Window);
+ 
+         if (drawBackground) {
+-            painter->setPen(Qt::transparent);
+-            painter->setBrush(color);
+-            painter->drawRect(rect);
++            renderToolsArea(rect, color);
+         }
+ 
+         painter->setPen(_helper->separatorColor(_toolsAreaManager->palette()));
+@@ -1378,9 +1415,7 @@ bool Style::drawWidgetPrimitive(const QStyleOption *option, QPainter *painter, c
+                 rect.setHeight(rect.height() + widget->devicePixelRatio() + vLayout->contentsMargins().top());
+ 
+                 if (drawBackground) {
+-                    painter->setPen(Qt::transparent);
+-                    painter->setBrush(color);
+-                    painter->drawRect(rect);
++                    renderToolsArea(rect, color);
+                 }
+ 
+                 painter->setPen(QPen(_helper->separatorColor(_toolsAreaManager->palette()), widget->devicePixelRatio()));
+@@ -1683,6 +1718,14 @@ bool Style::event(QEvent *e)
+ //_____________________________________________________________________
+ bool Style::eventFilter(QObject *object, QEvent *event)
+ {
++    // translucent windows: views and other widgets filling their background
++    // (this filter is installed on the application, and sees all paint events)
++    if (event->type() == QEvent::Paint && object->isWidgetType()) {
++        if (eventFilterTranslucentContent(static_cast<QWidget *>(object), static_cast<QPaintEvent *>(event))) {
++            return true;
++        }
++    }
++
+     if (auto dockWidget = qobject_cast<QDockWidget *>(object)) {
+         return eventFilterDockWidget(dockWidget, event);
+     } else if (auto subWindow = qobject_cast<QMdiSubWindow *>(object)) {
+@@ -1745,9 +1788,18 @@ bool Style::eventFilterPageViewHeader(QWidget *widget, QEvent *event)
+         QPainter painter(widget);
+         const auto &palette(_toolsAreaManager->palette());
+ 
+-        painter.setBrush(palette.color(QPalette::Window));
++        auto background(palette.color(QPalette::Window));
++        const qreal opacity(windowBackgroundOpacity(widget));
++        if (opacity < 1.0) {
++            // replace the translucent window background rather than stacking on top of it
++            background.setAlphaF(background.alphaF() * opacity);
++            painter.setCompositionMode(QPainter::CompositionMode_Source);
++        }
++
++        painter.setBrush(background);
+         painter.setPen(Qt::NoPen);
+         painter.drawRect(widget->rect());
++        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+ 
+         // Add separator next to the search field
+         if (widget->objectName() == QLatin1String("KPageView::Search")) {
+@@ -1815,6 +1867,14 @@ bool Style::eventFilterScrollArea(QWidget *widget, QEvent *event)
+         } else {
+             background = viewport->palette().color(role);
+         }
++
++        // match the translucent window background, or translucent views
++        const bool translucentRole((role == QPalette::Window && !hasAlteredBackground(viewport))
++                                   || (StyleConfigData::translucentViews() && (role == QPalette::Base || role == QPalette::AlternateBase)));
++        if (translucentRole && background.alpha() == 255) {
++            background.setAlphaF(background.alphaF() * windowBackgroundOpacity(scrollArea));
++            painter.setCompositionMode(QPainter::CompositionMode_Source);
++        }
+         painter.setBrush(background);
+ 
+         // render
+@@ -2210,6 +2270,19 @@ void Style::loadConfiguration()
+     // widget explorer
+     _widgetExplorer->setEnabled(StyleConfigData::widgetExplorerEnabled());
+     _widgetExplorer->setDrawWidgetRects(StyleConfigData::drawWidgetRects());
++
++    // translucent windows: update blur and repaint with the new opacity
++    const auto topLevelWidgets(QApplication::topLevelWidgets());
++    for (auto widget : topLevelWidgets) {
++        if (widget->property(PropertyNames::translucentWindow).toBool()) {
++            _blurHelper->update(widget);
++            widget->update();
++            const auto children(widget->findChildren<QWidget *>());
++            for (auto child : children) {
++                child->update();
++            }
++        }
++    }
+ }
+ 
+ //___________________________________________________________________________________________________________________
+@@ -4191,7 +4264,7 @@ bool Style::drawFrameMenuPrimitive(const QStyleOption *option, QPainter *painter
+ }
+ 
+ //______________________________________________________________
+-bool Style::drawFrameGroupBoxPrimitive(const QStyleOption *option, QPainter *painter, const QWidget *) const
++bool Style::drawFrameGroupBoxPrimitive(const QStyleOption *option, QPainter *painter, const QWidget *widget) const
+ {
+     // cast option and check
+     const auto frameOption(qstyleoption_cast<const QStyleOptionFrame *>(option));
+@@ -4215,6 +4288,7 @@ bool Style::drawFrameGroupBoxPrimitive(const QStyleOption *option, QPainter *pai
+      */
+ 
+     painter->setClipRegion(option->rect);
++    painter->setOpacity(windowBackgroundOpacity(widget));
+     _helper->renderFrame(painter, option->rect, background, outline);
+ 
+     return true;
+@@ -4318,6 +4392,7 @@ bool Style::drawFrameTabWidgetPrimitive(const QStyleOption *option, QPainter *pa
+         break;
+     }
+ 
++    painter->setOpacity(windowBackgroundOpacity(widget));
+     _helper->renderTabWidgetFrame(painter, rect, background, outline, corners);
+ 
+     return true;
+@@ -4838,13 +4913,23 @@ bool Style::drawPanelItemViewItemPrimitive(const QStyleOption *option, QPainter
+ 
+     // render alternate background
+     if (hasAlternateBackground) {
++        auto alternateColor(palette.color(colorGroup, QPalette::AlternateBase));
++
++        // translucent windows: replace the translucent view background rather than covering it
++        const qreal opacity(StyleConfigData::translucentViews() ? windowBackgroundOpacity(actualWidget) : 1.0);
++        if (opacity < 1.0) {
++            alternateColor.setAlphaF(alternateColor.alphaF() * opacity);
++            painter->setCompositionMode(QPainter::CompositionMode_Source);
++        }
++
+         painter->setPen(Qt::NoPen);
+         _helper->renderViewItemPosition(painter,
+                                         viewItemPosition,
+                                         viewItemOption->direction,
+                                         option->rect,
+-                                        palette.color(colorGroup, QPalette::AlternateBase),
++                                        alternateColor,
+                                         QColor());
++        painter->setCompositionMode(QPainter::CompositionMode_SourceOver);
+     }
+ 
+     // stop here if no highlight is needed
+@@ -7367,6 +7452,7 @@ bool Style::drawTabBarTabShapeControl(const QStyleOption *option, QPainter *pain
+     stateProperties["isQtQuickControl"] = isQtQuickControl;
+     stateProperties["hasAlteredBackground"] = hasAlteredBackground(widget);
+ 
++    painter->setOpacity(windowBackgroundOpacity(widget));
+     if (isStatic) {
+         _helper->renderStaticTabBarTab(painter, rect, option->palette, stateProperties, corners, animation);
+     } else {
+@@ -8519,6 +8605,358 @@ void Style::setTranslucentBackground(QWidget *widget) const
+ #endif
+ }
+ 
++//____________________________________________________________________________________
++bool Style::isTranslucentWindowCandidate(const QWidget *widget) const
++{
++#ifdef Q_OS_WIN
++    // would require frameless windows
++    Q_UNUSED(widget)
++    return false;
++#else
++    if (!(widget && widget->isWindow())) {
++        return false;
++    }
++
++    // feature disabled. Enabling it requires restarting applications, since the alpha channel
++    // must be requested before native windows are created
++    if (StyleConfigData::windowOpacity() >= 100 || !_helper->compositingActive()) {
++        return false;
++    }
++
++    // only regular application windows and dialogs. Menus, tooltips, tool windows, etc. are left alone
++    if (!(qobject_cast<const QMainWindow *>(widget) || qobject_cast<const QDialog *>(widget))) {
++        return false;
++    }
++
++    const auto type(widget->windowType());
++    if (type != Qt::Window && type != Qt::Dialog) {
++        return false;
++    }
++
++    // explicitly opted out
++    if (widget->property(PropertyNames::noWindowTranslucency).toBool()) {
++        return false;
++    }
++
++    // applications that manage the window background themselves
++    if (widget->testAttribute(Qt::WA_TranslucentBackground) || widget->testAttribute(Qt::WA_NoSystemBackground)
++        || widget->testAttribute(Qt::WA_PaintOnScreen) || widget->autoFillBackground() || !widget->styleSheet().isEmpty()) {
++        return false;
++    }
++
++    // too late once shown. Before that, the native window can still be recreated, see polishTranslucentWindow
++    if (widget->isVisible()) {
++        return false;
++    }
++
++    if (const auto window = widget->windowHandle()) {
++        if (window->isVisible() || window->surfaceType() != QSurface::RasterSurface) {
++            return false;
++        }
++    }
++
++    // per-application opt out
++    const auto blackList(StyleConfigData::windowOpacityBlackList());
++    if (!blackList.isEmpty()) {
++        const auto applicationName(QCoreApplication::applicationName());
++        const auto executableName(QFileInfo(QCoreApplication::applicationFilePath()).fileName());
++        for (const auto &entry : blackList) {
++            const auto name(entry.trimmed());
++            if (!name.isEmpty() && (name.compare(applicationName, Qt::CaseInsensitive) == 0 || name == executableName)) {
++                return false;
++            }
++        }
++    }
++
++    return true;
++#endif
++}
++
++//____________________________________________________________________________________
++void Style::polishTranslucentWindow(QWidget *widget)
++{
++    widget->setProperty(PropertyNames::translucentWindow, true);
++    widget->setAttribute(Qt::WA_TranslucentBackground);
++
++    /*
++    WA_TranslucentBackground implies WA_NoSystemBackground, which prevents Qt from painting
++    the (styled) window background altogether. Re-enable it, the translucent background
++    is then rendered in drawWidgetPrimitive
++    */
++    widget->setAttribute(Qt::WA_NoSystemBackground, false);
++    widget->setAttribute(Qt::WA_StyledBackground);
++
++    /*
++    QWidget::setVisible() creates the native window before polishing the widget, at which point
++    setting WA_TranslucentBackground no longer affects the window format. The window is not shown yet,
++    so recreate its platform window with an alpha channel. The QWindow itself (and its state) is kept,
++    and the widget follows through QPlatformSurfaceEvent
++    */
++    if (auto window = widget->windowHandle(); window && window->handle()) {
++        window->destroy();
++        auto format(window->requestedFormat());
++        format.setAlphaBufferSize(8);
++        window->setFormat(format);
++        window->create();
++    }
++
++    _blurHelper->registerWidget(widget);
++
++}
++
++//____________________________________________________________________________________
++qreal Style::windowBackgroundOpacity(const QWidget *widget) const
++{
++    if (!widget) {
++        return 1.0;
++    }
++
++    const auto window(widget->window());
++    if (!(window && window->property(PropertyNames::translucentWindow).toBool()) || window->isFullScreen()) {
++        return 1.0;
++    }
++
++    return std::clamp(StyleConfigData::windowOpacity(), 0, 100) / 100.0;
++}
++
++//____________________________________________________________________________________
++void Style::renderTranslucentWindowBackground(QPainter *painter, const QRect &rect, const QWidget *widget) const
++{
++    auto color(widget->palette().color(widget->isActiveWindow() ? QPalette::Active : QPalette::Inactive, QPalette::Window));
++    color.setAlphaF(color.alphaF() * windowBackgroundOpacity(widget));
++
++    painter->save();
++    painter->setCompositionMode(QPainter::CompositionMode_Source);
++    painter->fillRect(rect, color);
++    painter->restore();
++}
++
++//____________________________________________________________________________________
++bool Style::eventFilterTranslucentContent(QWidget *widget, QPaintEvent *event)
++{
++    if (widget->isWindow() || widget == _translucentContentWidget) {
++        return false;
++    }
++
++    const qreal opacity(windowBackgroundOpacity(widget));
++    if (opacity >= 1.0) {
++        return false;
++    }
++
++    const bool translucentViews(StyleConfigData::translucentViews());
++    if (translucentViews && isOpaqueContentWidget(widget)) {
++        return paintTranslucentContent(widget, event, opacity);
++    }
++
++    /*
++    Widgets filling their background (e.g. item view and text edit viewports): Qt already painted it opaque
++    on top of the translucent window background, replace it with its translucent counterpart before the
++    widget paints its contents
++    */
++    if (!widget->autoFillBackground() || widget->testAttribute(Qt::WA_NativeWindow)) {
++        return false;
++    }
++
++    const auto role(widget->backgroundRole());
++    if (!(role == QPalette::Window || (translucentViews && (role == QPalette::Base || role == QPalette::AlternateBase)))) {
++        return false;
++    }
++
++    // only opaque fills hide the window background. Translucent ones are left alone
++    const auto brush(widget->palette().brush(role));
++    if (brush.style() != Qt::SolidPattern || !brush.isOpaque()) {
++        return false;
++    }
++
++    auto color(brush.color());
++    color.setAlphaF(color.alphaF() * opacity);
++
++    QPainter painter(widget);
++    painter.setClipRegion(event->region());
++    painter.setCompositionMode(QPainter::CompositionMode_Source);
++    painter.fillRect(widget->rect(), color);
++    return false;
++}
++
++//____________________________________________________________________________________
++bool Style::isOpaqueContentWidget(const QWidget *widget) const
++{
++    // KTextEditor paints its background from its own color theme
++    if (widget->inherits("KateViewInternal") || widget->inherits("KateIconBorder") || widget->inherits("KateScrollBar")) {
++        return true;
++    }
++
++    // Dolphin paints alternating row backgrounds itself
++    if (const auto parent = widget->parentWidget(); parent && parent->inherits("KItemListContainerViewport")) {
++        return true;
++    }
++
++    return false;
++}
++
++//____________________________________________________________________________________
++bool Style::paintTranslucentContent(QWidget *widget, QPaintEvent *event, qreal opacity)
++{
++    /*
++    find out where the widget is being painted: the window backing store, or an image the widget
++    is rendered into. Anything else (e.g. pixmaps) is painted normally
++    */
++    QImage *image = nullptr;
++    QTransform transform;
++    {
++        QPainter probe(widget);
++        if (!probe.isActive()) {
++            return false;
++        }
++
++        auto device(probe.paintEngine()->paintDevice());
++        if (!device || device->devType() != QInternal::Image) {
++            return false;
++        }
++
++        image = static_cast<QImage *>(device);
++        transform = probe.deviceTransform();
++    }
++
++    if (image->format() != QImage::Format_ARGB32_Premultiplied) {
++        return false;
++    }
++
++    /*
++    let the widget paint itself, then process the pixels it painted. The event is sent again rather than
++    passed to the widget directly, so that event filters painting on its behalf (e.g. scroll area viewports)
++    are honored
++    */
++    _translucentContentWidget = widget;
++    QCoreApplication::sendEvent(widget, event);
++    _translucentContentWidget = nullptr;
++
++    QList<QRect> rects;
++    for (const QRect &rect : event->region()) {
++        const QRect deviceRect(transform.mapRect(QRectF(rect)).toAlignedRect() & image->rect());
++        if (!deviceRect.isEmpty()) {
++            rects.append(deviceRect);
++        }
++    }
++
++    if (rects.isEmpty()) {
++        return true;
++    }
++
++    /*
++    background color. Sampled as the most frequent color of large repaints, since the widget paints it
++    from its own settings (e.g. the text editor color theme). Small repaints reuse the last sampled color
++    */
++    static const char keyColorProperty[] = "_breeze_translucent_content_key";
++    QRgb key(widget->palette().color(QPalette::Base).rgba());
++    const QRect bounds(event->region().boundingRect());
++    if (bounds.width() * bounds.height() * 2 >= widget->width() * widget->height()) {
++        const QRect deviceBounds(transform.mapRect(QRectF(bounds)).toAlignedRect() & image->rect());
++        QHash<QRgb, int> counts;
++        const int steps = 16;
++        for (int i = 0; i < steps; ++i) {
++            const int y(deviceBounds.top() + (deviceBounds.height() - 1) * i / (steps - 1));
++            const QRgb *line = reinterpret_cast<const QRgb *>(image->constScanLine(y));
++            for (int j = 0; j < steps; ++j) {
++                const QRgb pixel(line[deviceBounds.left() + (deviceBounds.width() - 1) * j / (steps - 1)]);
++                if (qAlpha(pixel) == 255 && event->region().contains(transform.inverted().map(QPoint(deviceBounds.left() + (deviceBounds.width() - 1) * j / (steps - 1), y)))) {
++                    ++counts[pixel];
++                }
++            }
++        }
++
++        int best = 0;
++        for (auto it = counts.cbegin(); it != counts.cend(); ++it) {
++            if (it.value() > best) {
++                best = it.value();
++                key = it.key();
++            }
++        }
++
++        if (best > 0) {
++            widget->setProperty(keyColorProperty, uint(key));
++        }
++    } else if (const auto stored = widget->property(keyColorProperty); stored.isValid()) {
++        key = stored.toUInt();
++    }
++
++    if (qAlpha(key) != 255) {
++        return true;
++    }
++
++    /*
++    "color to alpha": each opaque pixel P is considered as some color F with coverage c, blended
++    over the background color B, with the smallest possible c. The pixel is then re-composited over
++    the background at the window opacity: text keeps its color, the background becomes translucent,
++    and colors close to the background (current line, alternating rows...) partially so
++    */
++    const int keyChannels[3] = {qRed(key), qGreen(key), qBlue(key)};
++    const QRgb keyTranslucent(qRgba(qRound(keyChannels[0] * opacity), qRound(keyChannels[1] * opacity), qRound(keyChannels[2] * opacity), qRound(255 * opacity)));
++
++    for (const QRect &rect : std::as_const(rects)) {
++        for (int y = rect.top(); y <= rect.bottom(); ++y) {
++            QRgb *line = reinterpret_cast<QRgb *>(image->scanLine(y));
++            for (int x = rect.left(); x <= rect.right(); ++x) {
++                const QRgb pixel(line[x]);
++                if (pixel == key) {
++                    line[x] = keyTranslucent;
++                    continue;
++                }
++
++                if (qAlpha(pixel) != 255) {
++                    continue;
++                }
++
++                const int channels[3] = {qRed(pixel), qGreen(pixel), qBlue(pixel)};
++                qreal coverage = 0;
++                for (int c = 0; c < 3; ++c) {
++                    if (channels[c] > keyChannels[c]) {
++                        coverage = std::max(coverage, qreal(channels[c] - keyChannels[c]) / (255 - keyChannels[c]));
++                    } else if (channels[c] < keyChannels[c]) {
++                        coverage = std::max(coverage, qreal(keyChannels[c] - channels[c]) / keyChannels[c]);
++                    }
++                }
++
++                if (coverage >= 1.0) {
++                    continue;
++                }
++
++                // background contribution that becomes transparent
++                const qreal removed((1.0 - coverage) * (1.0 - opacity));
++                line[x] = qRgba(std::clamp(qRound(channels[0] - removed * keyChannels[0]), 0, 255),
++                                std::clamp(qRound(channels[1] - removed * keyChannels[1]), 0, 255),
++                                std::clamp(qRound(channels[2] - removed * keyChannels[2]), 0, 255),
++                                qRound(255 * (1.0 - removed)));
++            }
++        }
++    }
++
++    return true;
++}
++
++//____________________________________________________________________________________
++bool Style::drawPanelItemViewRowPrimitive(const QStyleOption *option, QPainter *painter, const QWidget *widget) const
++{
++    // translucent windows: alternate rows replace the translucent view background rather than covering it
++    const auto viewItemOption(qstyleoption_cast<const QStyleOptionViewItem *>(option));
++    if (!(viewItemOption && (viewItemOption->features & QStyleOptionViewItem::Alternate) && StyleConfigData::translucentViews())) {
++        return false;
++    }
++
++    const qreal opacity(windowBackgroundOpacity(widget));
++    if (opacity >= 1.0) {
++        return false;
++    }
++
++    const auto group((widget ? widget->isEnabled() : (option->state & State_Enabled)) ? QPalette::Normal : QPalette::Disabled);
++    auto color(option->palette.color(group, QPalette::AlternateBase));
++    color.setAlphaF(color.alphaF() * opacity);
++
++    painter->setCompositionMode(QPainter::CompositionMode_Source);
++    painter->fillRect(option->rect, color);
++    return true;
++}
++
+ //____________________________________________________________________________________
+ QIcon Style::toolBarExtensionIcon(StandardPixmap standardPixmap, const QStyleOption *option, const QWidget *widget) const
+ {
+diff --git a/kstyle/breezestyle.h b/kstyle/breezestyle.h
+index 4429f45..4ce30b5 100644
+--- a/kstyle/breezestyle.h
++++ b/kstyle/breezestyle.h
+@@ -138,6 +138,9 @@ public:
+     bool eventFilterCommandLinkButton(QCommandLinkButton *, QEvent *);
+     bool eventFilterDialogButtonBox(QDialogButtonBox *, QEvent *);
+ 
++    //* make the background of widgets in translucent windows translucent. Returns true if the paint event was fully handled
++    bool eventFilterTranslucentContent(QWidget *, QPaintEvent *);
++
+     //* install event filter to object, in a unique way
+     void addEventFilter(QObject *object)
+     {
+@@ -382,6 +385,27 @@ private:
+     //* translucent background
+     void setTranslucentBackground(QWidget *) const;
+ 
++    //* true if widget is a top-level window whose background should be made translucent
++    bool isTranslucentWindowCandidate(const QWidget *) const;
++
++    //* enable background translucency on a top-level window
++    void polishTranslucentWindow(QWidget *);
++
++    //* background opacity of the window containing given widget. 1.0 if the window is not translucent
++    qreal windowBackgroundOpacity(const QWidget *) const;
++
++    //* fill a translucent window background, replacing whatever was painted underneath
++    void renderTranslucentWindowBackground(QPainter *, const QRect &, const QWidget *) const;
++
++    //* true for widgets that paint an opaque background themselves, which is made translucent by post-processing
++    bool isOpaqueContentWidget(const QWidget *) const;
++
++    //* let an opaque content widget paint, then turn its background color translucent. Returns true if the paint event was handled
++    bool paintTranslucentContent(QWidget *, QPaintEvent *, qreal opacity);
++
++    //* item view rows with alternating colors in translucent windows
++    bool drawPanelItemViewRowPrimitive(const QStyleOption *, QPainter *, const QWidget *) const;
++
+     //* create toolbar extension icon
+     QIcon toolBarExtensionIcon(StandardPixmap, const QStyleOption *, const QWidget *) const;
+ 
+@@ -490,6 +514,9 @@ private:
+     //* focus frame
+     QPointer<QFocusFrame> _focusFrame;
+ 
++    //* content widget whose paint event is being forwarded for translucency post-processing
++    QWidget *_translucentContentWidget = nullptr;
++
+     std::shared_ptr<Helper> _helper;
+ 
+     std::unique_ptr<ShadowHelper> _shadowHelper;
+diff --git a/kstyle/breezestyleplugin.cpp b/kstyle/breezestyleplugin.cpp
+index 0b9cd7d..55954ce 100644
+--- a/kstyle/breezestyleplugin.cpp
++++ b/kstyle/breezestyleplugin.cpp
+@@ -14,7 +14,7 @@ namespace Breeze
+ //_________________________________________________
+ QStyle *StylePlugin::create(const QString &key)
+ {
+-    if (key.compare(QLatin1String("breeze"), Qt::CaseInsensitive) == 0) {
++    if (key.compare(QLatin1String("breezetransparent"), Qt::CaseInsensitive) == 0) {
+         return new Style;
+     }
+     return nullptr;
+diff --git a/kstyle/breezetransparent.themerc b/kstyle/breezetransparent.themerc
+new file mode 100644
+index 0000000..0ed1988
+--- /dev/null
++++ b/kstyle/breezetransparent.themerc
+@@ -0,0 +1,6 @@
++[Misc]
++Name=Breeze Transparent
++ConfigPage=kstyle_config/breezetransparentstyleconfig
++Comment=Breeze widget style with translucent window backgrounds
++[KDE]
++WidgetStyle=BreezeTransparent
+diff --git a/kstyle/config/CMakeLists.txt b/kstyle/config/CMakeLists.txt
+index 8d1065f..5502c3b 100644
+--- a/kstyle/config/CMakeLists.txt
++++ b/kstyle/config/CMakeLists.txt
+@@ -8,13 +8,13 @@ kconfig_add_kcfg_files(kstyle_breeze_config_PART_SRCS ../breezestyleconfigdata.k
+ set(kstyle_breeze_config_PART_FORMS ui/breezestyleconfig.ui)
+ ki18n_wrap_ui(kstyle_breeze_config_PART_FORMS_HEADERS ${kstyle_breeze_config_PART_FORMS})
+ 
+-kcoreaddons_add_plugin(breezestyleconfig SOURCES
++kcoreaddons_add_plugin(breezetransparentstyleconfig SOURCES
+     ${kstyle_breeze_config_PART_SRCS}
+     ${kstyle_breeze_config_PART_FORMS_HEADERS}
+     INSTALL_NAMESPACE "kstyle_config"
+ )
+ 
+-target_link_libraries(breezestyleconfig
++target_link_libraries(breezetransparentstyleconfig
+     PUBLIC
+         Qt6::Core
+         Qt6::Gui
+@@ -22,13 +22,13 @@ target_link_libraries(breezestyleconfig
+ )
+ 
+ if(HAVE_QTDBUS)
+-    target_link_libraries(breezestyleconfig
++    target_link_libraries(breezetransparentstyleconfig
+         PUBLIC
+             Qt6::DBus
+     )
+ endif()
+ 
+-target_link_libraries(breezestyleconfig
++target_link_libraries(breezetransparentstyleconfig
+     PUBLIC
+         KF6::CoreAddons
+         KF6::ConfigCore
+@@ -36,33 +36,21 @@ target_link_libraries(breezestyleconfig
+         KF6::I18n
+ )
+ if(QT_MAJOR_VERSION STREQUAL "6")
+-    target_link_libraries(breezestyleconfig
++    target_link_libraries(breezetransparentstyleconfig
+         PUBLIC
+     KF6::KCMUtils
+ )
+ endif()
+-kcmutils_generate_desktop_file(breezestyleconfig)
++kcmutils_generate_desktop_file(breezetransparentstyleconfig)
+ 
+-set(breeze_settings_SOURCES main.cpp)
+-add_executable(breeze-settings ${breeze_settings_SOURCES} )
+-target_link_libraries(breeze-settings Qt6::Core Qt6::Gui Qt6::Widgets )
+-target_link_libraries(breeze-settings KF6::I18n KF6::KCMUtils KF6::CoreAddons)
+-
+-set_target_properties(breeze-settings PROPERTIES OUTPUT_NAME breeze-settings6)
+-
+-install(TARGETS breeze-settings ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
+-
+-# icon
+-ecm_install_icons(ICONS sc-apps-breeze-settings.svgz
+-    DESTINATION ${KDE_INSTALL_ICONDIR}
+-    THEME hicolor )
++# the standalone breeze-settings application is provided by stock Breeze
+ 
+ # kcmshell6 < 6.27.0 doesn't know the --smoke-test param, so skip this test for
+ # now.
+ # TODO: Drop this when KF6_MIN_VERSION >= 6.27.0
+ if(KF6KCMUtils_VERSION VERSION_GREATER_EQUAL "6.27.0")
+-    add_test(NAME breezestyleconfig_smoketest COMMAND kcmshell6 -style Breeze --smoke-test kstyle_config/breezestyleconfig)
+-    set_tests_properties(breezestyleconfig_smoketest PROPERTIES
++    add_test(NAME breezetransparentstyleconfig_smoketest COMMAND kcmshell6 -style BreezeTransparent --smoke-test kstyle_config/breezetransparentstyleconfig)
++    set_tests_properties(breezetransparentstyleconfig_smoketest PROPERTIES
+         ENVIRONMENT_MODIFICATION QT_PLUGIN_PATH=path_list_prepend:${CMAKE_BINARY_DIR}/bin
+     )
+ endif()
+diff --git a/kstyle/config/breezestyleconfig.cpp b/kstyle/config/breezestyleconfig.cpp
+index 64409b1..9f9059c 100644
+--- a/kstyle/config/breezestyleconfig.cpp
++++ b/kstyle/config/breezestyleconfig.cpp
+@@ -46,6 +46,10 @@ StyleConfig::StyleConfig(QWidget *parent)
+     connect(_scrollBarSubLineButtons, SIGNAL(currentIndexChanged(int)), SLOT(updateChanged()));
+     connect(_windowDragMode, SIGNAL(currentIndexChanged(int)), SLOT(updateChanged()));
+     connect(_menuOpacity, &QAbstractSlider::valueChanged, this, &StyleConfig::updateChanged);
++    connect(_windowOpacity, &QAbstractSlider::valueChanged, this, &StyleConfig::updateChanged);
++    connect(_windowBlurEnabled, &QAbstractButton::toggled, this, &StyleConfig::updateChanged);
++    connect(_translucentViews, &QAbstractButton::toggled, this, &StyleConfig::updateChanged);
++    connect(_windowOpacityBlackList, &QLineEdit::textChanged, this, &StyleConfig::updateChanged);
+ }
+ 
+ //__________________________________________________________________
+@@ -64,6 +68,10 @@ void StyleConfig::save()
+     StyleConfigData::setScrollBarSubLineButtons(_scrollBarSubLineButtons->currentIndex());
+     StyleConfigData::setWindowDragMode(_windowDragMode->currentIndex());
+     StyleConfigData::setMenuOpacity(_menuOpacity->value());
++    StyleConfigData::setWindowOpacity(_windowOpacity->value());
++    StyleConfigData::setWindowBlurEnabled(_windowBlurEnabled->isChecked());
++    StyleConfigData::setTranslucentViews(_translucentViews->isChecked());
++    StyleConfigData::setWindowOpacityBlackList(windowOpacityBlackList());
+ 
+     StyleConfigData::self()->save();
+ 
+@@ -72,6 +80,9 @@ void StyleConfig::save()
+     QDBusMessage message(
+         QDBusMessage::createSignal(QStringLiteral("/BreezeStyle"), QStringLiteral("org.kde.Breeze.Style"), QStringLiteral("reparseConfiguration")));
+     QDBusConnection::sessionBus().send(message);
++
++    // window opacity is shared with the window decoration, have kwin reload it
++    QDBusConnection::sessionBus().send(QDBusMessage::createSignal(QStringLiteral("/KWin"), QStringLiteral("org.kde.KWin"), QStringLiteral("reloadConfig")));
+ #endif
+ }
+ 
+@@ -123,6 +134,14 @@ void StyleConfig::updateChanged()
+         modified = true;
+     } else if (_menuOpacity->value() != StyleConfigData::menuOpacity()) {
+         modified = true;
++    } else if (_windowOpacity->value() != StyleConfigData::windowOpacity()) {
++        modified = true;
++    } else if (_windowBlurEnabled->isChecked() != StyleConfigData::windowBlurEnabled()) {
++        modified = true;
++    } else if (_translucentViews->isChecked() != StyleConfigData::translucentViews()) {
++        modified = true;
++    } else if (windowOpacityBlackList() != StyleConfigData::windowOpacityBlackList()) {
++        modified = true;
+     }
+     emit changed(modified);
+ }
+@@ -143,6 +162,24 @@ void StyleConfig::load()
+     _scrollBarSubLineButtons->setCurrentIndex(StyleConfigData::scrollBarSubLineButtons());
+     _windowDragMode->setCurrentIndex(StyleConfigData::windowDragMode());
+     _menuOpacity->setValue(StyleConfigData::menuOpacity());
++    _windowOpacity->setValue(StyleConfigData::windowOpacity());
++    _windowBlurEnabled->setChecked(StyleConfigData::windowBlurEnabled());
++    _translucentViews->setChecked(StyleConfigData::translucentViews());
++    _windowOpacityBlackList->setText(StyleConfigData::windowOpacityBlackList().join(QStringLiteral(", ")));
++}
++
++//__________________________________________________________________
++QStringList StyleConfig::windowOpacityBlackList() const
++{
++    QStringList out;
++    const auto entries(_windowOpacityBlackList->text().split(QLatin1Char(','), Qt::SkipEmptyParts));
++    for (const auto &entry : entries) {
++        const auto name(entry.trimmed());
++        if (!name.isEmpty()) {
++            out.append(name);
++        }
++    }
++    return out;
+ }
+ 
+ }
+diff --git a/kstyle/config/breezestyleconfig.h b/kstyle/config/breezestyleconfig.h
+index 560520f..f6748c9 100644
+--- a/kstyle/config/breezestyleconfig.h
++++ b/kstyle/config/breezestyleconfig.h
+@@ -46,6 +46,10 @@ protected Q_SLOTS:
+ 
+     //* update modified state when option is checked/unchecked
+     void updateChanged();
++
++private:
++    //* application names entered in the window opacity black list
++    QStringList windowOpacityBlackList() const;
+ };
+ 
+ }
+diff --git a/kstyle/config/breezestyleconfig.json b/kstyle/config/breezestyleconfig.json
+deleted file mode 100644
+index 93c3fc6..0000000
+--- a/kstyle/config/breezestyleconfig.json
++++ /dev/null
+@@ -1,136 +0,0 @@
+-{
+-    "KPlugin": {
+-        "Description": "Modify the appearance of widgets",
+-        "Description[ar]": "عدّل مظهر الودجات",
+-        "Description[bg]": "Настройване на външния изглед на уиджетите",
+-        "Description[ca@valencia]": "Modifica l'aparença dels ginys",
+-        "Description[ca]": "Modifica l'aparença dels ginys",
+-        "Description[cs]": "Změnit vzhled widgetů",
+-        "Description[de]": "Das Erscheinungsbild der Bedienelemente ändern",
+-        "Description[el]": "Τροποποίηση της εμφάνισης των γραφικών συστατικών",
+-        "Description[en_GB]": "Modify the appearance of widgets",
+-        "Description[eo]": "Modifi la aspekton de fenestraĵoj",
+-        "Description[es]": "Modificar el aspecto de los widgets",
+-        "Description[eu]": "Trepeten itxura aldatu",
+-        "Description[fi]": "Muuta käyttöliittymäalkioiden ulkoasua",
+-        "Description[fr]": "Modifier l'apparence des composants graphiques",
+-        "Description[gl]": "Modifica a aparencia dos trebellos.",
+-        "Description[he]": "שינוי מראה היישומונים",
+-        "Description[hu]": "Az elemek megjelenésének módosítása",
+-        "Description[ia]": "Modifica le apparentia de widgets",
+-        "Description[id]": "Ubah tampilan widget",
+-        "Description[is]": "Breyta útliti á græjum",
+-        "Description[it]": "Modifica l'aspetto degli oggetti",
+-        "Description[ja]": "ウィジェットの見た目をカスタマイズできます",
+-        "Description[ka]": "ვიჯეტების გარეგნობის შეცვლა",
+-        "Description[ko]": "위젯의 모양 수정",
+-        "Description[lt]": "Modifikuoti valdiklių išvaizdą",
+-        "Description[lv]": "Pielāgojiet logdaļu izskatu",
+-        "Description[nl]": "Wijzig het uiterlijk van widgets",
+-        "Description[nn]": "Endra utsjånaden på skjermkontrollar",
+-        "Description[pa]": "ਟੈਬ ਵਿਦਜੈੱਟ ਦੀ ਦਿੱਖ ਬਦਲੋ",
+-        "Description[pl]": "Zmień wygląd interfejsu",
+-        "Description[pt]": "Modificar o aspeto visual das 'widgets'",
+-        "Description[pt_BR]": "Modifica a aparência dos widgets",
+-        "Description[ro]": "Modifică aspectul controalelor grafice",
+-        "Description[ru]": "Настройка элементов интерфейса",
+-        "Description[sa]": "विजेट् इत्यस्य स्वरूपं परिवर्तयन्तु",
+-        "Description[sk]": "Zmena vzhľadu miniaplikácií",
+-        "Description[sl]": "Spremeni videz gradnikov",
+-        "Description[sq]": "Ndrysho pamjen e elementeve të ndërveprimit",
+-        "Description[sv]": "Ändra utseende hos grafiska komponenter",
+-        "Description[tr]": "Araç takımlarının görünüşünü değiştirin",
+-        "Description[uk]": "Внесення змін до вигляду віджетів",
+-        "Description[zh_CN]": "调整窗口部件外观",
+-        "Description[zh_TW]": "修改元件的外觀",
+-        "Icon": "preferences-desktop-theme",
+-        "Name": "Breeze Widget Style",
+-        "Name[ar]": "نمط ودجات نسيم",
+-        "Name[bg]": "Стил на уиджетите за Breeze",
+-        "Name[ca@valencia]": "Estil dels ginys Brisa",
+-        "Name[ca]": "Estil dels ginys Brisa",
+-        "Name[cs]": "Styl widgetů Breeze",
+-        "Name[de]": "Breeze-Stil der Bedienelemente",
+-        "Name[el]": "Breeze στιλ γραφικού συστατικού",
+-        "Name[en_GB]": "Breeze Widget Style",
+-        "Name[eo]": "Breeze-fenestraĵostilo",
+-        "Name[es]": "Estilo de widgets Brisa",
+-        "Name[eu]": "Brisa trepeta-estiloa",
+-        "Name[fi]": "Breeze-käyttöliittymäalkiotyyli",
+-        "Name[fr]": "Style des composants graphiques de Breeze",
+-        "Name[gl]": "Estilo do trebello de Brisa",
+-        "Name[he]": "סגנון יישומונים בריזה",
+-        "Name[hu]": "Breeze elemstílus",
+-        "Name[ia]": "Stilo de Elemento Graphic de Fenestra (Widget) de Breeze",
+-        "Name[id]": "Gaya Widget Breeze",
+-        "Name[is]": "Breeze græjustíll",
+-        "Name[it]": "Stile degli oggetti di Brezza",
+-        "Name[ja]": "Breeze のウィジェットスタイル",
+-        "Name[ka]": "Breeze -ის ვიჯეტის სტილი",
+-        "Name[ko]": "Breeze 위젯 스타일",
+-        "Name[lt]": "Breeze valdiklių stilius",
+-        "Name[lv]": "„Breeze“ logdaļu stils",
+-        "Name[nl]": "Breeze widgetstijl",
+-        "Name[nn]": "Breeze-elementstil",
+-        "Name[pa]": "ਬਰੀਜ਼ ਵਿਜੈਟ ਸਟਾਈਲ",
+-        "Name[pl]": "Wygląd interfejsu Bryzy",
+-        "Name[pt]": "Estilo de Widget Brisa",
+-        "Name[pt_BR]": "Estilo dos widgets Breeze",
+-        "Name[ro]": "Stilul controalelor Briză",
+-        "Name[ru]": "Стиль интерфейса Breeze",
+-        "Name[sa]": "हवा विजेट शैली",
+-        "Name[sk]": "Štýl prvkov Vánok",
+-        "Name[sl]": "Slog gradnikov Sapice",
+-        "Name[sv]": "Breeze stil för grafiska komponenter",
+-        "Name[tr]": "Esinti Araç Takımı Biçemi",
+-        "Name[uk]": "Стиль віджетів Breeze",
+-        "Name[zh_CN]": "Breeze 微风窗口部件风格",
+-        "Name[zh_TW]": "Breeze 元件樣式",
+-        "ServiceTypes": [
+-            "KCModule"
+-        ]
+-    },
+-    "X-KDE-Keywords": "breeze,widget,style",
+-    "X-KDE-Keywords[ar]": "نمط,ودجات,نسيم",
+-    "X-KDE-Keywords[bg]": "breeze,уиджет,стил",
+-    "X-KDE-Keywords[ca@valencia]": "brisa,giny,estil",
+-    "X-KDE-Keywords[ca]": "brisa,giny,estil",
+-    "X-KDE-Keywords[cs]": "breeze,widget,styl",
+-    "X-KDE-Keywords[de]": "Breeze,Bedienelemente,Stil",
+-    "X-KDE-Keywords[el]": "breeze, γραφικό στοιχείο, στυλ",
+-    "X-KDE-Keywords[en_GB]": "breeze,widget,style",
+-    "X-KDE-Keywords[eo]": "breeze,fenestraĵo,stilo",
+-    "X-KDE-Keywords[es]": "brisa,widget,elemento gráfico,estilo",
+-    "X-KDE-Keywords[eu]": "breeze,brisa,trepeta,estiloa",
+-    "X-KDE-Keywords[fi]": "breeze,käyttöliittymä,alkio,elementti,tyyli",
+-    "X-KDE-Keywords[fr]": "breeze, composant graphique, style",
+-    "X-KDE-Keywords[gl]": "breeze,trebello,trebello,estilo",
+-    "X-KDE-Keywords[he]": "בריזה,וידג׳ט,סגנון",
+-    "X-KDE-Keywords[hu]": "breeze,elem,stílus",
+-    "X-KDE-Keywords[ia]": "breeze,widget,style",
+-    "X-KDE-Keywords[is]": "breeze,græja,stílsnið",
+-    "X-KDE-Keywords[it]": "brezza,oggetto,stile",
+-    "X-KDE-Keywords[ja]": "breeze,widget,style,ウィジェット,スタイル,うぃじぇっと,すたいる",
+-    "X-KDE-Keywords[ka]": "breeze,widget,style,ვიჯეტი,სტილი",
+-    "X-KDE-Keywords[ko]": "위젯,스타일",
+-    "X-KDE-Keywords[lt]": "breeze,valdiklių,valdikliu,valdikliaus,valdiklio,stilius",
+-    "X-KDE-Keywords[lv]": "breeze,logdaļa,stils",
+-    "X-KDE-Keywords[nl]": "breeze,widget,stijl",
+-    "X-KDE-Keywords[nn]": "breeze,skjermelement,skjermkontrollar,stil,utsjånad",
+-    "X-KDE-Keywords[pl]": "breeze,widget,styl,bryza,element interfejsu",
+-    "X-KDE-Keywords[pt]": "brisa,widget,estilo",
+-    "X-KDE-Keywords[pt_BR]": "breeze,widget,estilo",
+-    "X-KDE-Keywords[ro]": "briză,control,controale,stil",
+-    "X-KDE-Keywords[ru]": "breeze,widget,style,виджет,стиль",
+-    "X-KDE-Keywords[sa]": "हवा,विजेट,शैली",
+-    "X-KDE-Keywords[sk]": "bríza,widget,štýl",
+-    "X-KDE-Keywords[sl]": "sapica,gradnik,slog",
+-    "X-KDE-Keywords[sq]": "breeze,widget,style",
+-    "X-KDE-Keywords[sv]": "breeze,grafisk komponent,stil",
+-    "X-KDE-Keywords[tr]": "esinti,breeze,araç takımı,biçem,stil",
+-    "X-KDE-Keywords[uk]": "breeze,widget,style,бриз,віджет,стиль,вигляд",
+-    "X-KDE-Keywords[zh_CN]": "breeze,weifeng,chuangkoubujian,yangshi,fengge,shijuefengge,微风,窗口部件,样式,风格,视觉风格",
+-    "X-KDE-Keywords[zh_TW]": "breeze,元件,風格,樣式",
+-    "X-KDE-ParentApp": "kcontrol",
+-    "X-KDE-Weight": 50
+-}
+diff --git a/kstyle/config/breezestyleconfigmodule.cpp b/kstyle/config/breezestyleconfigmodule.cpp
+index 52c9793..83cb0d7 100644
+--- a/kstyle/config/breezestyleconfigmodule.cpp
++++ b/kstyle/config/breezestyleconfigmodule.cpp
+@@ -8,7 +8,7 @@
+ 
+ #include <KPluginFactory>
+ 
+-K_PLUGIN_CLASS_WITH_JSON(Breeze::ConfigurationModule, "breezestyleconfig.json")
++K_PLUGIN_CLASS_WITH_JSON(Breeze::ConfigurationModule, "breezetransparentstyleconfig.json")
+ 
+ #include "breezestyleconfigmodule.moc"
+ 
+diff --git a/kstyle/config/breezetransparentstyleconfig.json b/kstyle/config/breezetransparentstyleconfig.json
+new file mode 100644
+index 0000000..6b5657c
+--- /dev/null
++++ b/kstyle/config/breezetransparentstyleconfig.json
+@@ -0,0 +1,55 @@
++{
++    "KPlugin": {
++        "Description": "Modify the appearance of widgets",
++        "Description[ar]": "عدّل مظهر الودجات",
++        "Description[bg]": "Настройване на външния изглед на уиджетите",
++        "Description[ca@valencia]": "Modifica l'aparença dels ginys",
++        "Description[ca]": "Modifica l'aparença dels ginys",
++        "Description[cs]": "Změnit vzhled widgetů",
++        "Description[de]": "Das Erscheinungsbild der Bedienelemente ändern",
++        "Description[el]": "Τροποποίηση της εμφάνισης των γραφικών συστατικών",
++        "Description[en_GB]": "Modify the appearance of widgets",
++        "Description[eo]": "Modifi la aspekton de fenestraĵoj",
++        "Description[es]": "Modificar el aspecto de los widgets",
++        "Description[eu]": "Trepeten itxura aldatu",
++        "Description[fi]": "Muuta käyttöliittymäalkioiden ulkoasua",
++        "Description[fr]": "Modifier l'apparence des composants graphiques",
++        "Description[gl]": "Modifica a aparencia dos trebellos.",
++        "Description[he]": "שינוי מראה היישומונים",
++        "Description[hu]": "Az elemek megjelenésének módosítása",
++        "Description[ia]": "Modifica le apparentia de widgets",
++        "Description[id]": "Ubah tampilan widget",
++        "Description[is]": "Breyta útliti á græjum",
++        "Description[it]": "Modifica l'aspetto degli oggetti",
++        "Description[ja]": "ウィジェットの見た目をカスタマイズできます",
++        "Description[ka]": "ვიჯეტების გარეგნობის შეცვლა",
++        "Description[ko]": "위젯의 모양 수정",
++        "Description[lt]": "Modifikuoti valdiklių išvaizdą",
++        "Description[lv]": "Pielāgojiet logdaļu izskatu",
++        "Description[nl]": "Wijzig het uiterlijk van widgets",
++        "Description[nn]": "Endra utsjånaden på skjermkontrollar",
++        "Description[pa]": "ਟੈਬ ਵਿਦਜੈੱਟ ਦੀ ਦਿੱਖ ਬਦਲੋ",
++        "Description[pl]": "Zmień wygląd interfejsu",
++        "Description[pt]": "Modificar o aspeto visual das 'widgets'",
++        "Description[pt_BR]": "Modifica a aparência dos widgets",
++        "Description[ro]": "Modifică aspectul controalelor grafice",
++        "Description[ru]": "Настройка элементов интерфейса",
++        "Description[sa]": "विजेट् इत्यस्य स्वरूपं परिवर्तयन्तु",
++        "Description[sk]": "Zmena vzhľadu miniaplikácií",
++        "Description[sl]": "Spremeni videz gradnikov",
++        "Description[sq]": "Ndrysho pamjen e elementeve të ndërveprimit",
++        "Description[sv]": "Ändra utseende hos grafiska komponenter",
++        "Description[tr]": "Araç takımlarının görünüşünü değiştirin",
++        "Description[uk]": "Внесення змін до вигляду віджетів",
++        "Description[zh_CN]": "调整窗口部件外观",
++        "Description[zh_TW]": "修改元件的外觀",
++        "Icon": "preferences-desktop-theme",
++        "Name": "Breeze Transparent Widget Style",
++        "ServiceTypes": [
++            "KCModule"
++        ]
++    },
++    "X-KDE-Keywords": "breeze,transparent,translucent,blur,widget,style",
++    "X-KDE-ParentApp": "kcontrol",
++    "X-KDE-Weight": 50
++}
+diff --git a/kstyle/config/ui/breezestyleconfig.ui b/kstyle/config/ui/breezestyleconfig.ui
+index bef7946..9fd5924 100644
+--- a/kstyle/config/ui/breezestyleconfig.ui
++++ b/kstyle/config/ui/breezestyleconfig.ui
+@@ -315,7 +315,7 @@
+        <string>Transparency</string>
+       </attribute>
+       <layout class="QGridLayout" name="gridLayout_2">
+-       <item row="10" column="1">
++       <item row="13" column="1">
+         <spacer name="verticalSpacer_5">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+@@ -426,7 +426,90 @@
+          </property>
+         </spacer>
+        </item>
++       <item row="8" column="0" colspan="2">
++        <layout class="QHBoxLayout" name="horizontalLayout_windowOpacity">
++         <item>
++          <widget class="QLabel" name="_windowGroupDescription">
++           <property name="text">
++            <string>Windows:</string>
++           </property>
++          </widget>
++         </item>
++         <item>
++          <widget class="QSlider" name="_windowOpacity">
++           <property name="toolTip">
++            <string>Background opacity of application windows and dialogs. Enabling window transparency requires restarting applications.</string>
++           </property>
++           <property name="minimum">
++            <number>0</number>
++           </property>
++           <property name="maximum">
++            <number>100</number>
++           </property>
++           <property name="singleStep">
++            <number>1</number>
++           </property>
++           <property name="pageStep">
++            <number>10</number>
++           </property>
++           <property name="value">
++            <number>100</number>
++           </property>
++           <property name="orientation">
++            <enum>Qt::Horizontal</enum>
++           </property>
++           <property name="tickPosition">
++            <enum>QSlider::TicksBelow</enum>
++           </property>
++           <property name="tickInterval">
++            <number>10</number>
++           </property>
++          </widget>
++         </item>
++        </layout>
++       </item>
+        <item row="9" column="0" colspan="2">
++        <widget class="QCheckBox" name="_windowBlurEnabled">
++         <property name="text">
++          <string>Blur background of transparent windows</string>
++         </property>
++        </widget>
++       </item>
++       <item row="10" column="0" colspan="2">
++        <widget class="QCheckBox" name="_translucentViews">
++         <property name="toolTip">
++          <string>Also make the background of lists, file views and text editors of transparent windows transparent</string>
++         </property>
++         <property name="text">
++          <string>Apply to views and text editors</string>
++         </property>
++        </widget>
++       </item>
++       <item row="11" column="0" colspan="2">
++        <layout class="QHBoxLayout" name="horizontalLayout_windowOpacityBlackList">
++         <item>
++          <widget class="QLabel" name="_windowOpacityBlackListLabel">
++           <property name="text">
++            <string>Keep opaque:</string>
++           </property>
++           <property name="buddy">
++            <cstring>_windowOpacityBlackList</cstring>
++           </property>
++          </widget>
++         </item>
++         <item>
++          <widget class="QLineEdit" name="_windowOpacityBlackList">
++           <property name="toolTip">
++            <string>Comma separated list of applications whose windows are never made transparent</string>
++           </property>
++           <property name="placeholderText">
++            <string>e.g. krita, kdenlive</string>
++           </property>
++          </widget>
++         </item>
++        </layout>
++       </item>
++       <item row="12" column="0" colspan="2">
+         <spacer name="horizontalSpacer_4">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+@@ -462,6 +545,11 @@
+   <tabstop>_menuItemDrawThinFocus</tabstop>
+   <tabstop>_scrollBarSubLineButtons</tabstop>
+   <tabstop>_scrollBarAddLineButtons</tabstop>
++  <tabstop>_menuOpacity</tabstop>
++  <tabstop>_windowOpacity</tabstop>
++  <tabstop>_windowBlurEnabled</tabstop>
++  <tabstop>_translucentViews</tabstop>
++  <tabstop>_windowOpacityBlackList</tabstop>
+  </tabstops>
+  <resources/>
+  <connections>
