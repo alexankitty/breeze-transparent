@@ -1,7 +1,7 @@
 pkgbase = breeze-transparent
 	pkgdesc = Breeze widget style and window decoration with translucent window backgrounds
 	pkgver = 6.7.5
-	pkgrel = 2
+	pkgrel = 4
 	url = https://kde.org/plasma-desktop/
 	arch = x86_64
 	license = LGPL-2.0-or-later
@@ -39,8 +39,8 @@ pkgbase = breeze-transparent
 	sha256sums = SKIP
 	sha256sums = 4e0e913b0515de75492155d028c086c4a522a3f68ebb6f4fab10f8bc646cd518
 	sha256sums = SKIP
-	sha256sums = 1650f8f99c8a84b3d5563a98cdf71873540a135cb043b25056424e16113172bd
-	sha256sums = d61299a70019e8d275bc77c4e8607d6bb37055fd4b7084275675b32cf4e94aff
+	sha256sums = 24cd18d9d01703219e76ec7ae3e760f8c3e151492f01a194711dffb108584d27
+	sha256sums = 42c7811ae0ed83a9fd1ab37be44f8702e135ded322b8b999dc9c5505e7aa756f
 
 pkgname = breeze-transparent
 	depends = frameworkintegration

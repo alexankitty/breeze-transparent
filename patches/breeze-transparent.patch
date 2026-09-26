@@ -1731,7 +1731,7 @@ index 0000000..0ed1988
 +[KDE]
 +WidgetStyle=BreezeTransparent
 diff --git a/kstyle/config/CMakeLists.txt b/kstyle/config/CMakeLists.txt
-index 8d1065f..5502c3b 100644
+index 8d1065f..f0a796c 100644
 --- a/kstyle/config/CMakeLists.txt
 +++ b/kstyle/config/CMakeLists.txt
 @@ -8,13 +8,13 @@ kconfig_add_kcfg_files(kstyle_breeze_config_PART_SRCS ../breezestyleconfigdata.k
@@ -1766,7 +1766,7 @@ index 8d1065f..5502c3b 100644
      PUBLIC
          KF6::CoreAddons
          KF6::ConfigCore
-@@ -36,33 +36,21 @@ target_link_libraries(breezestyleconfig
+@@ -36,33 +36,23 @@ target_link_libraries(breezestyleconfig
          KF6::I18n
  )
  if(QT_MAJOR_VERSION STREQUAL "6")
@@ -1777,7 +1777,9 @@ index 8d1065f..5502c3b 100644
  )
  endif()
 -kcmutils_generate_desktop_file(breezestyleconfig)
-+kcmutils_generate_desktop_file(breezetransparentstyleconfig)
++# visible in application launchers, so that the settings can be opened outside of Plasma System Settings
++# (kcmutils_generate_desktop_file() would generate a hidden entry)
++install(FILES breezetransparentstyleconfig.desktop DESTINATION ${KDE_INSTALL_APPDIR})
  
 -set(breeze_settings_SOURCES main.cpp)
 -add_executable(breeze-settings ${breeze_settings_SOURCES} )
@@ -2051,6 +2053,20 @@ index 52c9793..83cb0d7 100644
  
  #include "breezestyleconfigmodule.moc"
  
+diff --git a/kstyle/config/breezetransparentstyleconfig.desktop b/kstyle/config/breezetransparentstyleconfig.desktop
+new file mode 100644
+index 0000000..0860252
+--- /dev/null
++++ b/kstyle/config/breezetransparentstyleconfig.desktop
+@@ -0,0 +1,8 @@
++[Desktop Entry]
++Type=Application
++Name=Breeze Transparent Widget Style
++Comment=Configure the Breeze Transparent application style
++Icon=preferences-desktop-theme
++Exec=kcmshell6 kstyle_config/breezetransparentstyleconfig
++Categories=Qt;KDE;Settings;DesktopSettings;
++Keywords=breeze;transparent;translucent;blur;widget;style;opacity;
 diff --git a/kstyle/config/breezetransparentstyleconfig.json b/kstyle/config/breezetransparentstyleconfig.json
 new file mode 100644
 index 0000000..6b5657c

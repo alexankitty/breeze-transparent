@@ -1,8 +1,8 @@
 diff --git a/README.md b/README.md
-index 30dacc3..cc94006 100644
+index 30dacc3..905fd16 100644
 --- a/README.md
 +++ b/README.md
-@@ -17,3 +17,26 @@ To install only for the current user, copy the files to "~/.themes".
+@@ -17,3 +17,27 @@ To install only for the current user, copy the files to "~/.themes".
  
  To set the theme in Plasma 5, install kde-gtk-config and use System Settings > Application Style > GNOME Application Style.
  Also make sure to disable "apply colors to non-Qt applications" in System Settings > Colors > Options.
@@ -17,8 +17,9 @@ index 30dacc3..cc94006 100644
 +# or: build_theme.sh -o 85 ...
 +```
 +
-+It can be changed at runtime by redefining the translucent colors in `~/.config/gtk-3.0/gtk.css`
-+and `~/.config/gtk-4.0/gtk.css` (after the `colors.css` import written by KDE):
++It can be changed per user without rebuilding with `breeze-transparent-gtk-opacity 70` (percent;
++`show` and `reset` are also available), then restarting GTK applications. This redefines the
++translucent colors in `~/.config/gtk-3.0/gtk.css` and `~/.config/gtk-4.0/gtk.css`, as follows:
 +
 +```css
 +@define-color theme_bg_color_translucent_breeze alpha(@theme_bg_color_breeze, 0.7);
@@ -30,7 +31,7 @@ index 30dacc3..cc94006 100644
 +Note: GTK themes cannot request background blur. On X11, GTK 3 windows without client-side
 +decorations have no alpha channel and will look darkened instead; Wayland is recommended.
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 743c948..383103c 100644
+index 743c948..ee8036e 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -2,6 +2,8 @@ file(GLOB_RECURSE SCSS_SOURCES "*.scss")
@@ -42,7 +43,7 @@ index 743c948..383103c 100644
  configure_file(build_theme.sh.cmake ${CMAKE_CURRENT_BINARY_DIR}/build_theme.sh @ONLY)
  
  set(SOURCES
-@@ -20,33 +22,34 @@ function(gen_targets THEME_NAME)
+@@ -20,33 +22,37 @@ function(gen_targets THEME_NAME)
      )
  endfunction()
  
@@ -85,15 +86,18 @@ index 743c948..383103c 100644
  )
 -add_custom_target(Breeze ALL DEPENDS ${Breeze_TARGETS})
 +add_custom_target(Breeze-Transparent ALL DEPENDS ${Breeze-Transparent_TARGETS})
++
++install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze-Transparent" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
++install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze-Transparent-Dark" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
++install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze-Transparent")
++install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze-Transparent-Dark")
  
 -install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
 -install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze-Dark" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
 -install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze")
 -install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze-Dark")
-+install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze-Transparent" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
-+install(DIRECTORY "${PROJECT_BINARY_DIR}/Breeze-Transparent-Dark" DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/")
-+install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze-Transparent")
-+install(FILES settings.ini DESTINATION "${KDE_INSTALL_FULL_DATAROOTDIR}/themes/Breeze-Transparent-Dark")
++# per-user opacity override, see README.md
++install(PROGRAMS breeze-transparent-gtk-opacity DESTINATION "${KDE_INSTALL_FULL_BINDIR}")
 diff --git a/src/_colors.scss b/src/_colors.scss
 index dc03035..c9bc43a 100644
 --- a/src/_colors.scss
@@ -128,6 +132,122 @@ index dc03035..c9bc43a 100644
  /*
  * Tooltips
  */
+diff --git a/src/breeze-transparent-gtk-opacity b/src/breeze-transparent-gtk-opacity
+new file mode 100755
+index 0000000..5ab1141
+--- /dev/null
++++ b/src/breeze-transparent-gtk-opacity
+@@ -0,0 +1,110 @@
++#!/bin/sh
++# Set the window background opacity of the Breeze-Transparent GTK themes for the current user.
++#
++# The themes define their translucent colors as named colors, which the user GTK 3 and GTK 4
++# stylesheets can redefine. This writes those definitions to breeze-transparent.css next to
++# gtk.css, and imports it from gtk.css (the rest of gtk.css is left untouched).
++set -eu
++
++name=$(basename "$0")
++config_home=${XDG_CONFIG_HOME:-$HOME/.config}
++override=breeze-transparent.css
++import_line="@import url(\"$override\");"
++
++usage() {
++    cat <<EOF
++Usage: $name OPACITY
++       $name reset
++       $name show
++
++Set the window background opacity of the Breeze-Transparent GTK themes, for the current user.
++
++  OPACITY   opacity in percent, from 0 (fully transparent) to 100 (opaque)
++  reset     remove the override, going back to the opacity the themes were built with
++  show      print the current override
++
++Running applications need to be restarted.
++EOF
++}
++
++# write stdin to a file, following symlinks (e.g. gtk.css managed as a dotfile)
++write_file() {
++    tmp=$(mktemp)
++    cat > "$tmp"
++    cat "$tmp" > "$1"
++    rm -f "$tmp"
++}
++
++set_opacity() {
++    alpha=$(awk -v value="$1" 'BEGIN { printf "%g", value / 100 }')
++
++    for version in gtk-3.0 gtk-4.0; do
++        dir="$config_home/$version"
++        mkdir -p "$dir"
++
++        write_file "$dir/$override" <<EOF
++/* Generated by $name, changes will be overwritten. Window background opacity: $1% */
++@define-color theme_bg_color_translucent_breeze alpha(@theme_bg_color_breeze, $alpha);
++@define-color theme_unfocused_bg_color_translucent_breeze alpha(@theme_unfocused_bg_color_breeze, $alpha);
++@define-color theme_titlebar_background_translucent_breeze alpha(@theme_titlebar_background_breeze, $alpha);
++@define-color theme_titlebar_background_backdrop_translucent_breeze alpha(@theme_titlebar_background_backdrop_breeze, $alpha);
++EOF
++
++        # @import rules must come before anything else: add ours at the top
++        css="$dir/gtk.css"
++        if [ ! -e "$css" ]; then
++            echo "$import_line" > "$css"
++        elif ! grep -qxF "$import_line" "$css"; then
++            { echo "$import_line"; cat "$css"; } | write_file "$css"
++        fi
++    done
++
++    echo "Window background opacity set to $1%. Restart GTK applications to apply it."
++}
++
++reset_opacity() {
++    for version in gtk-3.0 gtk-4.0; do
++        dir="$config_home/$version"
++        rm -f "$dir/$override"
++        if [ -e "$dir/gtk.css" ] && grep -qxF "$import_line" "$dir/gtk.css"; then
++            grep -vxF "$import_line" "$dir/gtk.css" | write_file "$dir/gtk.css" || true
++        fi
++    done
++
++    echo "Opacity override removed. Restart GTK applications to apply it."
++}
++
++show_opacity() {
++    for version in gtk-3.0 gtk-4.0; do
++        file="$config_home/$version/$override"
++        if [ -e "$file" ]; then
++            value=$(sed -n 's/.*Window background opacity: \([0-9]*\)%.*/\1/p' "$file")
++            echo "$version: ${value:-?}%"
++        else
++            echo "$version: not set (build default)"
++        fi
++    done
++}
++
++case "${1:-}" in
++    -h|--help) usage ;;
++    reset) reset_opacity ;;
++    show) show_opacity ;;
++    '')
++        usage >&2
++        exit 1
++        ;;
++    *)
++        case "$1" in
++            *[!0-9]*)
++                echo "$name: invalid opacity '$1', expected an integer between 0 and 100" >&2
++                exit 1
++                ;;
++        esac
++        if [ "$1" -gt 100 ]; then
++            echo "$name: invalid opacity '$1', expected an integer between 0 and 100" >&2
++            exit 1
++        fi
++        set_opacity "$1"
++        ;;
++esac
 diff --git a/src/build_theme.sh.cmake b/src/build_theme.sh.cmake
 index 8cc269e..4f4c98f 100755
 --- a/src/build_theme.sh.cmake
