@@ -1049,7 +1049,7 @@ index 7735778..ee9b806 100644
  
  }
 diff --git a/kstyle/breezestyle.cpp b/kstyle/breezestyle.cpp
-index f0d4dfe..a7fad8d 100644
+index f0d4dfe..a360634 100644
 --- a/kstyle/breezestyle.cpp
 +++ b/kstyle/breezestyle.cpp
 @@ -25,6 +25,8 @@
@@ -1294,7 +1294,7 @@ index f0d4dfe..a7fad8d 100644
      if (isStatic) {
          _helper->renderStaticTabBarTab(painter, rect, option->palette, stateProperties, corners, animation);
      } else {
-@@ -8519,6 +8605,358 @@ void Style::setTranslucentBackground(QWidget *widget) const
+@@ -8519,6 +8605,366 @@ void Style::setTranslucentBackground(QWidget *widget) const
  #endif
  }
  
@@ -1394,7 +1394,6 @@ index f0d4dfe..a7fad8d 100644
 +    }
 +
 +    _blurHelper->registerWidget(widget);
-+
 +}
 +
 +//____________________________________________________________________________________
@@ -1537,40 +1536,49 @@ index f0d4dfe..a7fad8d 100644
 +    }
 +
 +    /*
-+    background color. Sampled as the most frequent color of large repaints, since the widget paints it
-+    from its own settings (e.g. the text editor color theme). Small repaints reuse the last sampled color
++    background color. Widgets filling their background (e.g. Dolphin's view) use their palette color.
++    Others paint it from their own settings (e.g. the text editor color theme): it is then sampled as the
++    most frequent color of full repaints. Once known, it only changes when it disappeared from the widget
++    altogether (e.g. after a color theme change), so that large selections or highlights never take over
 +    */
 +    static const char keyColorProperty[] = "_breeze_translucent_content_key";
-+    QRgb key(widget->palette().color(QPalette::Base).rgba());
-+    const QRect bounds(event->region().boundingRect());
-+    if (bounds.width() * bounds.height() * 2 >= widget->width() * widget->height()) {
-+        const QRect deviceBounds(transform.mapRect(QRectF(bounds)).toAlignedRect() & image->rect());
-+        QHash<QRgb, int> counts;
-+        const int steps = 16;
-+        for (int i = 0; i < steps; ++i) {
-+            const int y(deviceBounds.top() + (deviceBounds.height() - 1) * i / (steps - 1));
-+            const QRgb *line = reinterpret_cast<const QRgb *>(image->constScanLine(y));
-+            for (int j = 0; j < steps; ++j) {
-+                const QRgb pixel(line[deviceBounds.left() + (deviceBounds.width() - 1) * j / (steps - 1)]);
-+                if (qAlpha(pixel) == 255 && event->region().contains(transform.inverted().map(QPoint(deviceBounds.left() + (deviceBounds.width() - 1) * j / (steps - 1), y)))) {
-+                    ++counts[pixel];
++    QRgb key(0);
++    if (widget->autoFillBackground()) {
++        key = widget->palette().color(widget->backgroundRole()).rgba();
++    } else {
++        const auto stored(widget->property(keyColorProperty));
++        if (stored.isValid()) {
++            key = stored.toUInt();
++        }
++
++        if (event->region() == QRegion(widget->rect())) {
++            const QRect deviceBounds(transform.mapRect(QRectF(widget->rect())).toAlignedRect() & image->rect());
++            QHash<QRgb, int> counts;
++            const int steps = 16;
++            for (int i = 0; i < steps; ++i) {
++                const QRgb *line = reinterpret_cast<const QRgb *>(image->constScanLine(deviceBounds.top() + (deviceBounds.height() - 1) * i / (steps - 1)));
++                for (int j = 0; j < steps; ++j) {
++                    const QRgb pixel(line[deviceBounds.left() + (deviceBounds.width() - 1) * j / (steps - 1)]);
++                    if (qAlpha(pixel) == 255) {
++                        ++counts[pixel];
++                    }
++                }
++            }
++
++            if (!stored.isValid() || !counts.contains(key)) {
++                int best = 0;
++                for (auto it = counts.cbegin(); it != counts.cend(); ++it) {
++                    if (it.value() > best) {
++                        best = it.value();
++                        key = it.key();
++                    }
++                }
++
++                if (best > 0) {
++                    widget->setProperty(keyColorProperty, uint(key));
 +                }
 +            }
 +        }
-+
-+        int best = 0;
-+        for (auto it = counts.cbegin(); it != counts.cend(); ++it) {
-+            if (it.value() > best) {
-+                best = it.value();
-+                key = it.key();
-+            }
-+        }
-+
-+        if (best > 0) {
-+            widget->setProperty(keyColorProperty, uint(key));
-+        }
-+    } else if (const auto stored = widget->property(keyColorProperty); stored.isValid()) {
-+        key = stored.toUInt();
 +    }
 +
 +    if (qAlpha(key) != 255) {
